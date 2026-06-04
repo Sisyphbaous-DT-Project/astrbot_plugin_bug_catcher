@@ -67,10 +67,10 @@ class BugAnalyzer:
 请严格按照以下 JSON 格式输出，不要添加任何 markdown 代码块标记，不要添加任何解释性文字：
 
 {
-    "result": "none" | "suspected" | "confirmed",
+    "result": "confirmed",
     "bugs": [
         {
-            "severity": "low" | "medium" | "high" | "critical",
+            "severity": "high",
             "summary": "用一句话简要描述这个 bug",
             "analysis": "详细分析为什么判断这是 bug，基于哪些聊天记录得出此结论。如果是重复 bug，请说明首次发现时间和之前的记录 ID。",
             "related_messages": [0, 1],
@@ -81,6 +81,14 @@ class BugAnalyzer:
     ]
 }
 
+字段说明（请严格遵循）：
+- result: 可选值为 none / suspected / confirmed 三者之一
+- severity: 可选值为 low / medium / high / critical 四者之一
+- related_messages: 数组，包含所有与此 bug 相关的消息索引（可能有多个）
+- primary_message_index: 单个整数，必须是 related_messages 数组中的某一个索引，表示最关键的那一条
+- is_duplicate: 布尔值，是否与已记录 bug 重复
+- duplicate_of_id: 字符串，重复 bug 对应的已记录 ID
+
 重要规则：
 - 一次分析中可能包含多条独立的 bug 报告（不同用户报告不同的问题，或同一用户报告了多个不同的 bug）
 - 请仔细区分不同的问题本质，将每个独立的 bug 作为一个单独的对象放入 bugs 数组
@@ -88,10 +96,12 @@ class BugAnalyzer:
 - 如果群聊中确实存在多条不同来源的 bug 反馈，bugs 数组应包含所有独立的 bug 记录
 
 primary_message_index 规则（重要）：
-- primary_message_index 是导致你判断这是 bug 的最关键的一条消息索引（必须是单个整数，从 0 开始）
-- 这条消息应该是直接包含报错信息、异常描述、错误截图或明确 bug 证据的那一条
+- primary_message_index 是导致你判断这是 bug 的最关键的一条消息索引
+- 取值范围：-1 或 0 到消息总数减 1 之间的单个整数
+- -1 表示聊天记录中没有哪条消息能明确指向 bug 证据（例如只是多人口头描述，没有具体报错）
+- 0 及以上的值表示直接包含报错信息、异常描述或明确 bug 证据的那一条消息的索引
+- primary_message_index 必须是 related_messages 数组中的一个索引，不要指向无关消息
 - related_messages 可以包含多条相关消息，但 primary_message_index 只标出其中最关键的一条
-- 如果聊天记录中没有哪条消息能明确指向 bug 根源（例如只是多人口头描述），设置为 -1
 
 判断标准：
 - "none"：聊天记录完全是闲聊、技术讨论、使用教程、功能咨询等，没有任何 bug 报告
