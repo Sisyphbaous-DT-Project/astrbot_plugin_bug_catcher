@@ -218,6 +218,18 @@ body {
   align-items: center;
   gap: 4px;
 }
+.meta-label {
+  display: inline-block;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 2px;
+}
 .report-count {
   font-size: 10px;
   font-weight: 700;
@@ -380,9 +392,17 @@ body {
   padding: 48px 20px;
   color: var(--text-muted);
 }
-.empty-state-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
+.empty-state-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.empty-state-hint {
+  font-size: 13px;
+}
+.empty-state.error .empty-state-title {
+  color: var(--danger);
 }
 
 /* 加载 */

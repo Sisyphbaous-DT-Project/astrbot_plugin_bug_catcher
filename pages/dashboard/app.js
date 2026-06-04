@@ -138,8 +138,8 @@ function renderBugs() {
   if (state.bugs.length === 0) {
     listEl.innerHTML = `
       <div class="empty-state">
-        <div class="empty-state-icon">🛡️</div>
-        <div>暂无 Bug 记录</div>
+        <div class="empty-state-title">暂无 Bug 记录</div>
+        <div class="empty-state-hint">群聊消息将被自动分析，发现的 bug 会显示在这里</div>
       </div>
     `;
     return;
@@ -163,9 +163,9 @@ function renderBugs() {
       </div>
       <div class="bug-summary">${escapeHtml(bug.summary)}</div>
       <div class="bug-meta">
-        <span class="meta-item">📍 ${escapeHtml(bug.umo_display || bug.umo)}</span>
-        <span class="meta-item">👤 ${escapeHtml(firstReporter)}</span>
-        <span class="meta-item">📝 ${formatTime(bug.created_at)}</span>
+        <span class="meta-item"><span class="meta-label">群聊</span>${escapeHtml(bug.umo_display || bug.umo)}</span>
+        <span class="meta-item"><span class="meta-label">报告者</span>${escapeHtml(firstReporter)}</span>
+        <span class="meta-item"><span class="meta-label">时间</span>${formatTime(bug.created_at)}</span>
       </div>
       <div class="bug-actions">
         <button class="btn btn-primary btn-small" onclick="showDetail('${safeId}')">详情</button>
@@ -340,9 +340,9 @@ function unwrapRes(res) {
 
 function showError(msg) {
   document.getElementById('bugList').innerHTML = `
-    <div class="empty-state">
-      <div class="empty-state-icon">⚠️</div>
-      <div>${escapeHtml(msg)}</div>
+    <div class="empty-state error">
+      <div class="empty-state-title">加载失败</div>
+      <div class="empty-state-hint">${escapeHtml(msg)}</div>
     </div>
   `;
 }
