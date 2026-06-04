@@ -300,12 +300,10 @@ function closeModal() {
 }
 
 async function resolveBug(id) {
-  if (!safeConfirm('确定标记为已解决？')) return;
   await updateStatus(id, 'resolved');
 }
 
 async function ignoreBug(id) {
-  if (!safeConfirm('确定忽略此记录？')) return;
   await updateStatus(id, 'ignored');
 }
 
@@ -315,18 +313,17 @@ async function updateStatus(id, status) {
     await loadBugs();
     await loadStats();
   } catch (e) {
-    safeAlert('更新失败: ' + (e?.message || '未知错误'));
+    console.error('[BugCatcher] 更新失败:', e?.message || e);
   }
 }
 
 async function deleteBug(id) {
-  if (!safeConfirm('确定删除此记录？删除后不可恢复。')) return;
   try {
     unwrapRes(await bridge.apiPost(`bugs/${id}/delete`, {}));
     await loadBugs();
     await loadStats();
   } catch (e) {
-    safeAlert('删除失败: ' + (e?.message || '未知错误'));
+    console.error('[BugCatcher] 删除失败:', e?.message || e);
   }
 }
 
@@ -382,23 +379,4 @@ function formatTime(val, isTimestamp) {
   if (isNaN(date.getTime())) return '-';
   const pad = n => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-// AstrBot Dashboard webview 可能阻断 confirm()/alert() (iframe sandbox)，
-// 使用 try-catch 包裹，不可用时静默降级
-function safeConfirm(msg) {
-  try {
-    if (typeof confirm === 'function') {
-      const result = confirm(msg);
-      // sandbox 忽略 confirm 时返回 undefined（不是 false）
-      return result !== undefined ? result : true;
-    }
-  } catch (_) {}
-  return true;
-}
-
-function safeAlert(msg) {
-  try {
-    if (typeof alert === 'function') alert(msg);
-  } catch (_) {}
 }
