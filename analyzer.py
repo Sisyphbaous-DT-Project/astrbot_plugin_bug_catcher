@@ -172,6 +172,12 @@ primary_message_index 规则（重要）：
                     bug.primary_message_index = -1
                 elif not (-1 <= bug.primary_message_index < msg_count):
                     bug.primary_message_index = -1
+                elif (
+                    bug.primary_message_index >= 0
+                    and bug.primary_message_index not in bug.related_messages
+                ):
+                    # PMI 必须在 related_messages 中（与 System Prompt 规则一致）
+                    bug.primary_message_index = -1
 
         return result
 
@@ -253,8 +259,8 @@ primary_message_index 规则（重要）：
         """将 UMO 格式化为可读群信息。"""
         parts = umo.split(":", 2)
         if len(parts) >= 3:
-            return f"平台={parts[0]}, 群/会话 ID={parts[2]}"
-        return umo
+            return f"平台={parts[0]}, 群/会话 ID={parts[2].replace('\n', ' ')}"
+        return umo.replace("\n", " ")
 
     # ------------------------------------------------------------------
     # LLM 调用
@@ -385,6 +391,17 @@ primary_message_index 规则（重要）：
             raw_rel = bug_data.get("related_messages", []) or []
             if not isinstance(raw_rel, list):
                 raw_rel = []
+            else:
+                # 过滤掉 bool 和无法转为 int 的元素
+                cleaned = []
+                for v in raw_rel:
+                    if isinstance(v, bool):
+                        continue
+                    try:
+                        cleaned.append(int(v))
+                    except (TypeError, ValueError):
+                        continue
+                raw_rel = cleaned
 
             bug = BugItem(
                 severity=self._validate_severity(bug_data.get("severity", "medium")),

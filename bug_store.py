@@ -263,6 +263,8 @@ class BugStore:
     ) -> MessageRecord | None:
         """从 related_messages 索引中找到第一条有效消息。"""
         for raw in related_indices:
+            if isinstance(raw, bool):
+                continue
             try:
                 idx = int(raw)
             except (TypeError, ValueError):

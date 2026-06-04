@@ -135,14 +135,15 @@ class TestBugAnalyzer:
         assert result.bugs[0].duplicate_of_id == "12345"
 
     def test_parse_related_messages_with_strings(self, analyzer):
-        """related_messages 包含字符串索引时应被容错处理。"""
+        """related_messages 应被清理：字符串转 int，非法/ bool 滤除。"""
         text = (
             '{"result": "confirmed", "bugs": [{"severity": "medium", '
             '"summary": "x", "analysis": "y", "related_messages": ["0", 1, "abc"]}]}'
         )
         result = analyzer._parse_response(text)
         assert result.result == "confirmed"
-        assert result.bugs[0].related_messages == ["0", 1, "abc"]
+        # 字符串 "0" → int 0, "abc" 滤除, 1 保留
+        assert result.bugs[0].related_messages == [0, 1]
 
     def test_parse_related_messages_not_list(self, analyzer):
         """related_messages 不是列表时应回退为空列表。"""
@@ -153,6 +154,17 @@ class TestBugAnalyzer:
         result = analyzer._parse_response(text)
         assert result.result == "confirmed"
         assert result.bugs[0].related_messages == []
+
+    def test_parse_related_messages_filters_bool(self, analyzer):
+        """related_messages 中的 bool 值应被滤除。"""
+        text = (
+            '{"result": "confirmed", "bugs": [{"severity": "high", '
+            '"summary": "x", "analysis": "y", '
+            '"related_messages": [0, true, false, 1]}]}'
+        )
+        result = analyzer._parse_response(text)
+        assert result.result == "confirmed"
+        assert result.bugs[0].related_messages == [0, 1]
 
     def test_parse_primary_message_index(self, analyzer):
         """应正确解析 primary_message_index。"""
@@ -385,3 +397,19 @@ class TestBugAnalyzer:
         )
         result = await analyzer.analyze(sample_messages, "test_umo")
         assert result.bugs[0].primary_message_index == last_idx
+
+    @pytest.mark.asyncio
+    async def test_analyze_pmi_not_in_related(
+        self, analyzer, mock_context, sample_messages
+    ):
+        """PMI 不在 related_messages 中时应被修正为 -1。"""
+        analyzer.provider_id = "test_provider"
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text=(
+                '{"result": "confirmed", "bugs": [{"severity": "high", '
+                '"summary": "a", "analysis": "b", "related_messages": [0, 2], '
+                '"primary_message_index": 1}]}'
+            )
+        )
+        result = await analyzer.analyze(sample_messages, "test_umo")
+        assert result.bugs[0].primary_message_index == -1
