@@ -2,9 +2,6 @@
  * Bug Catcher Dashboard 前端逻辑
  */
 
-// Bridge SDK（AstrBot 注入的全局对象）
-const bridge = window.AstrBotPluginPage;
-
 // 全局状态
 const state = {
   page: 1,
@@ -18,9 +15,31 @@ const state = {
   }
 };
 
+// Bridge SDK（AstrBot 注入的全局对象）
+// app.js 在 Bridge SDK 之前加载，需要等待其就绪
+async function getBridge() {
+  return new Promise((resolve, reject) => {
+    const maxWait = 5000; // 最多等 5 秒
+    const start = Date.now();
+    const check = () => {
+      if (window.AstrBotPluginPage) {
+        resolve(window.AstrBotPluginPage);
+        return;
+      }
+      if (Date.now() - start > maxWait) {
+        reject(new Error('Bridge SDK 加载超时'));
+        return;
+      }
+      setTimeout(check, 50);
+    };
+    check();
+  });
+}
+
 // 等待 Bridge SDK 就绪
 (async function init() {
   try {
+    const bridge = await getBridge();
     await bridge.ready();
     console.log('[BugCatcher] Bridge SDK 就绪');
     bindEvents();
