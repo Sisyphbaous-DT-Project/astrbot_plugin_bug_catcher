@@ -13,13 +13,17 @@ from quart import jsonify, request
 from astrbot.api import logger
 
 from .bug_store import BugStore
+from .diagnostics import DiagnosticsStore
 
 
 class DashboardAPI:
     """Dashboard 后端 API 封装。"""
 
-    def __init__(self, bug_store: BugStore):
+    def __init__(
+        self, bug_store: BugStore, diagnostics: DiagnosticsStore | None = None
+    ):
         self.bug_store = bug_store
+        self.diagnostics = diagnostics or DiagnosticsStore()
         self.prefix = "/astrbot_plugin_bug_catcher"
         self._registered: list[tuple[str, list[str]]] = []
 
@@ -34,6 +38,14 @@ class DashboardAPI:
             (f"{self.prefix}/bugs/<id>/delete", self.delete_bug, ["POST"]),
             (f"{self.prefix}/bugs/<id>/status", self.update_status, ["POST"]),
             (f"{self.prefix}/stats", self.get_stats, ["GET"]),
+            (
+                f"{self.prefix}/diagnostics/summary",
+                self.get_diagnostics_summary,
+                ["GET"],
+            ),
+            (f"{self.prefix}/diagnostics", self.get_diagnostics, ["GET"]),
+            (f"{self.prefix}/diagnostics/read", self.mark_diagnostics_read, ["POST"]),
+            (f"{self.prefix}/diagnostics/clear", self.clear_diagnostics, ["POST"]),
         ]
         for route, handler, methods in apis:
             context.register_web_api(
@@ -107,6 +119,11 @@ class DashboardAPI:
             )
         except Exception as e:
             logger.error(f"[DashboardAPI] 查询 bug 列表失败: {e}")
+            await self.diagnostics.record_error(
+                "Dashboard 查询 bug 列表失败",
+                e,
+                source="dashboard.get_bugs",
+            )
             return self._error(str(e))
 
         return self._ok(
@@ -128,6 +145,12 @@ class DashboardAPI:
             success = await self.bug_store.delete_bug(bug_id)
         except Exception as e:
             logger.error(f"[DashboardAPI] 删除 bug 失败: {e}")
+            await self.diagnostics.record_error(
+                "Dashboard 删除 bug 失败",
+                e,
+                source="dashboard.delete_bug",
+                context={"bug_id": bug_id},
+            )
             return self._error(str(e))
 
         if not success:
@@ -155,6 +178,12 @@ class DashboardAPI:
             success = await self.bug_store.update_bug_status(bug_id, status, note)
         except Exception as e:
             logger.error(f"[DashboardAPI] 更新状态失败: {e}")
+            await self.diagnostics.record_error(
+                "Dashboard 更新状态失败",
+                e,
+                source="dashboard.update_status",
+                context={"bug_id": bug_id, "status": status},
+            )
             return self._error(str(e))
 
         if not success:
@@ -167,9 +196,54 @@ class DashboardAPI:
             stats = await self.bug_store.get_stats()
         except Exception as e:
             logger.error(f"[DashboardAPI] 获取统计失败: {e}")
+            await self.diagnostics.record_error(
+                "Dashboard 获取统计失败",
+                e,
+                source="dashboard.get_stats",
+            )
             return self._error(str(e))
 
         return self._ok(stats)
+
+    async def get_diagnostics_summary(self, **kwargs) -> Any:
+        """获取插件诊断状态摘要。"""
+        try:
+            summary = await self.diagnostics.get_summary()
+        except Exception as e:
+            logger.error(f"[DashboardAPI] 获取诊断摘要失败: {e}")
+            return self._error(str(e))
+        return self._ok(summary)
+
+    async def get_diagnostics(self, **kwargs) -> Any:
+        """获取插件诊断事件列表。"""
+        limit = _int_param(request.args, "limit", 20, min_val=1, max_val=100)
+        unread_only = _bool_param(request.args, "unread_only", False)
+        try:
+            events = await self.diagnostics.list_events(
+                limit=limit,
+                unread_only=unread_only,
+            )
+        except Exception as e:
+            logger.error(f"[DashboardAPI] 获取诊断事件失败: {e}")
+            return self._error(str(e))
+        return self._ok({"events": events})
+
+    async def mark_diagnostics_read(self, **kwargs) -> Any:
+        """标记插件诊断事件为已读。"""
+        try:
+            body = await request.get_json(force=True, silent=True) or {}
+        except Exception:
+            body = {}
+        ids = body.get("ids")
+        if ids is not None and not isinstance(ids, list):
+            return self._error("ids 必须是列表")
+        count = await self.diagnostics.mark_read(ids=ids)
+        return self._ok({"marked": count}, message="已标记为已读")
+
+    async def clear_diagnostics(self, **kwargs) -> Any:
+        """清空插件诊断事件。"""
+        count = await self.diagnostics.clear()
+        return self._ok({"cleared": count}, message="诊断记录已清空")
 
 
 # ------------------------------------------------------------------

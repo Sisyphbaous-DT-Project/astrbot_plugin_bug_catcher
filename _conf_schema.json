@@ -41,5 +41,11 @@
     "_special": "select_provider",
     "hint": "留空则使用当前默认模型",
     "default": ""
+  },
+  "diagnostics_max_entries": {
+    "description": "插件自身诊断记录最大保留条数",
+    "type": "int",
+    "hint": "仅记录插件运行 warning/error，不记录群聊原文；建议 100-500",
+    "default": 200
   }
 }

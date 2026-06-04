@@ -17,6 +17,7 @@
 - **Batch Isolation 批次隔离**：触发分析时原子取出当前批次，LLM 分析期间的新消息会留给下一轮，避免并发丢消息（v1.1.6）
 - **Multi-layer JSON Tolerance 多层 JSON 容错**：LLM 返回非标准 JSON 时自动尝试正则提取和格式修复，极大降低解析失败率
 - **Dashboard Panel Dashboard 面板**：WebUI 可视化展示 bug 列表，支持筛选、分页、详情、原始消息追溯、关键消息高亮、删除确认、Toast 反馈、重复点击保护和 AstrBot 同款视觉风格（v1.1.8）
+- **Plugin Diagnostics 插件诊断**：记录插件自身 warning/error，Dashboard 右上角红点提示未读异常，可展开查看时间、来源和摘要（v1.2.0）
 - **Atomic Persistence 原子持久化**：临时文件 + `os.replace()` 原子重命名，防止写入中断导致 JSON 损坏
 - **Concurrency Safe 并发安全**：每 UMO 独立 `asyncio.Lock`，分析任务互斥，TTL 清理加锁防竞态（v1.1.1）
 - **Sandbox Friendly 前端兼容**：Dashboard 不依赖浏览器原生 `confirm()` / `alert()`，适配 AstrBot iframe sandbox 环境（v1.1.4）
@@ -44,6 +45,7 @@ cp -r astrbot_plugin_bug_catcher /path/to/astrbot/data/plugins/
 | `time_threshold_min` | int | 时间阈值（分钟）：低活跃群聊超过此时间强制触发分析 | `30` |
 | `analysis_interval_min` | int | 同一群聊的分析冷却时间（分钟），防止频繁调用 LLM（最小值 1） | `5` |
 | `provider_id` | string | 用于 Bug 分析的 LLM 提供商（留空使用默认模型） | 空（默认模型） |
+| `diagnostics_max_entries` | int | 插件自身诊断记录最大保留条数，不记录群聊原文 | `200` |
 
 ## Usage 使用方式
 
@@ -97,7 +99,7 @@ AI 返回的核心字段大致如下：
          -> ChatBufferManager (deque + 双阈值触发 + TTL清理)
          -> BugAnalyzer (System Prompt + LLM + JSON 容错 + Prompt 注入防护 + 去重)
          -> BugStore (JSON 原子写入 + report_history + primary_message_index + 统计同步)
-         -> Dashboard API (4 routes) -> Dashboard Page (HTML/CSS/JS + Bridge SDK)
+          -> Dashboard API (Bug routes + diagnostics routes) -> Dashboard Page (HTML/CSS/JS + Bridge SDK)
 ```
 
 ## Project Structure 文件结构
@@ -108,9 +110,10 @@ astrbot_plugin_bug_catcher/
 |-- chat_buffer.py       # 消息缓存管理器（FIFO deque、batch_size/时间双阈值、TTL 清理）
 |-- analyzer.py          # AI 分析引擎（Prompt 构建、LLM 调用、JSON 容错、字段校验、图片清洗、去重）
 |-- bug_store.py         # Bug 持久化存储（CRUD、分页查询、report_history、原子 rename 写入）
-|-- dashboard_api.py     # Dashboard 后端 API（4 个 GET/POST 路由封装）
-|-- metadata.yaml        # 插件元数据（v1.1.8）
-|-- _conf_schema.json    # 配置项定义（7 项，含 _special: "select_provider"）
+|-- dashboard_api.py     # Dashboard 后端 API（Bug 列表/统计 + 插件诊断路由封装）
+|-- diagnostics.py       # 插件自身 warning/error 诊断日志存储
+|-- metadata.yaml        # 插件元数据（v1.2.0）
+|-- _conf_schema.json    # 配置项定义（8 项，含 _special: "select_provider"）
 |-- pytest.ini           # Pytest 配置
 |-- requirements-test.txt # 测试依赖
 |-- .gitignore
@@ -143,7 +146,7 @@ ruff format --check .
 # Ruff lint
 ruff check .
 
-# 运行全部测试（104 项）
+# 运行全部测试（119 项）
 pytest -q
 
 # 检查 Dashboard 前端 JS 语法

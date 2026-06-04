@@ -228,6 +228,7 @@ def default_config():
         "time_threshold_min": 5,
         "analysis_interval_min": 1,
         "provider_id": "",
+        "diagnostics_max_entries": 200,
     }
 
 

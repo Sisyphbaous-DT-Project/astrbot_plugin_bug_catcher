@@ -10,6 +10,7 @@ import pytest
 
 from astrbot_plugin_bug_catcher.dashboard_api import DashboardAPI
 from astrbot_plugin_bug_catcher.bug_store import BugStore, BugRecord
+from astrbot_plugin_bug_catcher.diagnostics import DiagnosticsStore
 
 
 @pytest.mark.unit
@@ -27,8 +28,19 @@ class TestDashboardAPI:
         return store
 
     @pytest.fixture
-    def api(self, mock_bug_store):
-        return DashboardAPI(mock_bug_store)
+    def mock_diagnostics(self):
+        diagnostics = MagicMock(spec=DiagnosticsStore)
+        diagnostics.get_summary = AsyncMock(return_value={"status": "ok"})
+        diagnostics.list_events = AsyncMock(return_value=[])
+        diagnostics.mark_read = AsyncMock(return_value=2)
+        diagnostics.clear = AsyncMock(return_value=3)
+        diagnostics.record_error = AsyncMock()
+        diagnostics.record_warning = AsyncMock()
+        return diagnostics
+
+    @pytest.fixture
+    def api(self, mock_bug_store, mock_diagnostics):
+        return DashboardAPI(mock_bug_store, mock_diagnostics)
 
     @pytest.fixture
     def mock_context(self):
@@ -41,9 +53,9 @@ class TestDashboardAPI:
     # ------------------------------------------------------------------
 
     def test_register_routes(self, api, mock_context):
-        """应注册 4 个路由。"""
+        """应注册 Bug 与诊断相关路由。"""
         api.register(mock_context)
-        assert mock_context.register_web_api.call_count == 4
+        assert mock_context.register_web_api.call_count == 8
 
     # ------------------------------------------------------------------
     # get_bugs
@@ -113,6 +125,7 @@ class TestDashboardAPI:
         json_data = await resp.get_json()
         assert json_data["code"] == 1
         assert "DB error" in json_data["message"]
+        api.diagnostics.record_error.assert_awaited_once()
 
     # ------------------------------------------------------------------
     # delete_bug
@@ -215,3 +228,58 @@ class TestDashboardAPI:
 
         json_data = await resp.get_json()
         assert json_data["code"] == 1
+
+    # ------------------------------------------------------------------
+    # diagnostics
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_get_diagnostics_summary(self, api):
+        """应返回诊断摘要。"""
+        with patch("astrbot_plugin_bug_catcher.dashboard_api.request"):
+            resp = await api.get_diagnostics_summary()
+
+        json_data = await resp.get_json()
+        assert json_data["code"] == 0
+        assert json_data["data"]["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_get_diagnostics(self, api):
+        """应返回诊断事件列表。"""
+        api.diagnostics.list_events.return_value = [
+            {"id": "e1", "level": "error", "title": "失败"}
+        ]
+
+        with patch("astrbot_plugin_bug_catcher.dashboard_api.request") as mock_req:
+            mock_req.args = {"limit": "10"}
+            resp = await api.get_diagnostics()
+
+        json_data = await resp.get_json()
+        assert json_data["code"] == 0
+        assert json_data["data"]["events"][0]["id"] == "e1"
+        api.diagnostics.list_events.assert_awaited_once_with(
+            limit=10,
+            unread_only=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_mark_diagnostics_read(self, api):
+        """应支持标记诊断事件为已读。"""
+        with patch("astrbot_plugin_bug_catcher.dashboard_api.request") as mock_req:
+            mock_req.get_json = AsyncMock(return_value={"ids": ["e1"]})
+            resp = await api.mark_diagnostics_read()
+
+        json_data = await resp.get_json()
+        assert json_data["code"] == 0
+        assert json_data["data"]["marked"] == 2
+        api.diagnostics.mark_read.assert_awaited_once_with(ids=["e1"])
+
+    @pytest.mark.asyncio
+    async def test_clear_diagnostics(self, api):
+        """应支持清空诊断事件。"""
+        with patch("astrbot_plugin_bug_catcher.dashboard_api.request"):
+            resp = await api.clear_diagnostics()
+
+        json_data = await resp.get_json()
+        assert json_data["code"] == 0
+        assert json_data["data"]["cleared"] == 3

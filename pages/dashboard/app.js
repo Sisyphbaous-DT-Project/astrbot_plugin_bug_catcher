@@ -13,6 +13,11 @@ const state = {
     status: '',
     result: ''
   },
+  diagnostics: {
+    summary: null,
+    events: [],
+    panelOpen: false
+  },
   pending: new Set()
 };
 
@@ -47,8 +52,10 @@ async function getBridge() {
     console.log('[BugCatcher] Bridge SDK 就绪');
     bindEvents();
     bindButtonRipple();
+    await loadDiagnosticsSummary();
     await loadStats();
     await loadBugs();
+    setInterval(loadDiagnosticsSummary, 30000);
   } catch (e) {
     console.error('[BugCatcher] 初始化失败:', e);
     showError('初始化失败: ' + (e?.message || '未知错误'));
@@ -99,6 +106,17 @@ function bindEvents() {
     if (confirmCallback) confirmCallback();
     closeConfirmModal();
   });
+
+  document.getElementById('diagnosticsButton').addEventListener('click', toggleDiagnosticsPanel);
+  document.getElementById('diagnosticsClose').addEventListener('click', closeDiagnosticsPanel);
+  document.getElementById('diagnosticsMarkRead').addEventListener('click', markDiagnosticsRead);
+  document.getElementById('diagnosticsClear').addEventListener('click', clearDiagnostics);
+  document.addEventListener('click', (e) => {
+    const widget = document.getElementById('diagnosticsWidget');
+    if (state.diagnostics.panelOpen && widget && !widget.contains(e.target)) {
+      closeDiagnosticsPanel();
+    }
+  });
 }
 
 function bindButtonRipple() {
@@ -133,6 +151,28 @@ async function loadStats() {
     document.getElementById('statToday').textContent = data.today_count || 0;
   } catch (e) {
     console.error('加载统计失败:', e);
+  }
+}
+
+async function loadDiagnosticsSummary() {
+  if (!bridge) return;
+  try {
+    const summary = unwrapRes(await bridge.apiGet('diagnostics/summary')) || {};
+    state.diagnostics.summary = summary;
+    renderDiagnosticsSummary();
+  } catch (e) {
+    console.error('加载诊断摘要失败:', e);
+  }
+}
+
+async function loadDiagnosticsEvents() {
+  try {
+    const data = unwrapRes(await bridge.apiGet('diagnostics', { limit: 20 })) || {};
+    state.diagnostics.events = data.events || [];
+    renderDiagnosticsEvents();
+  } catch (e) {
+    state.diagnostics.events = [];
+    renderDiagnosticsEvents('加载诊断记录失败: ' + (e?.message || '未知错误'));
   }
 }
 
@@ -240,6 +280,65 @@ function renderPagination() {
   html += `<span class="page-info">共 ${state.total} 条</span>`;
 
   el.innerHTML = html;
+}
+
+function renderDiagnosticsSummary() {
+  const summary = state.diagnostics.summary || {};
+  const button = document.getElementById('diagnosticsButton');
+  const dot = document.getElementById('diagnosticsDot');
+  const text = document.getElementById('diagnosticsSummaryText');
+  const status = summary.status || 'ok';
+  const unreadErrors = summary.unread_error_count || 0;
+  const unreadWarnings = summary.unread_warning_count || 0;
+  const unreadTotal = unreadErrors + unreadWarnings;
+
+  button.className = `diagnostics-button status-${status}`;
+  dot.textContent = unreadTotal > 0 ? String(unreadTotal) : '';
+
+  if (status === 'error') {
+    text.textContent = `${unreadErrors} 条未读错误，${unreadWarnings} 条未读警告`;
+  } else if (status === 'warning') {
+    text.textContent = `${unreadWarnings} 条未读警告`;
+  } else {
+    text.textContent = '插件运行状态正常';
+  }
+}
+
+function renderDiagnosticsEvents(errorText) {
+  const list = document.getElementById('diagnosticsList');
+  if (errorText) {
+    list.innerHTML = `<div class="diagnostics-empty error">${escapeHtml(errorText)}</div>`;
+    return;
+  }
+
+  const events = state.diagnostics.events || [];
+  if (events.length === 0) {
+    list.innerHTML = '<div class="diagnostics-empty">暂无诊断记录</div>';
+    return;
+  }
+
+  list.innerHTML = events.map(event => {
+    const context = event.context && typeof event.context === 'object'
+      ? Object.entries(event.context).slice(0, 4).map(([key, value]) => `
+        <div class="diagnostics-context-item">
+          <span>${escapeHtml(key)}</span>
+          <code>${escapeHtml(String(value))}</code>
+        </div>
+      `).join('')
+      : '';
+    return `
+      <div class="diagnostics-item ${escapeHtml(event.level)}${event.unread ? ' unread' : ''}">
+        <div class="diagnostics-item-top">
+          <span class="diagnostics-level">${escapeHtml(event.level)}</span>
+          <span class="diagnostics-time">${formatTime(event.created_at)}</span>
+        </div>
+        <div class="diagnostics-item-title">${escapeHtml(event.title)}</div>
+        <div class="diagnostics-item-message">${escapeHtml(event.message)}</div>
+        <div class="diagnostics-source">${escapeHtml(event.source || 'runtime')}</div>
+        ${context ? `<div class="diagnostics-context">${context}</div>` : ''}
+      </div>
+    `;
+  }).join('');
 }
 
 // ------------------------------------------------------------------
@@ -401,6 +500,42 @@ function goPage(page) {
   if (page < 1 || page > totalPages) return;
   state.page = page;
   loadBugs();
+}
+
+async function toggleDiagnosticsPanel() {
+  if (state.diagnostics.panelOpen) {
+    closeDiagnosticsPanel();
+    return;
+  }
+  state.diagnostics.panelOpen = true;
+  document.getElementById('diagnosticsPanel').classList.add('show');
+  await loadDiagnosticsEvents();
+}
+
+function closeDiagnosticsPanel() {
+  state.diagnostics.panelOpen = false;
+  document.getElementById('diagnosticsPanel').classList.remove('show');
+}
+
+async function markDiagnosticsRead() {
+  try {
+    unwrapRes(await bridge.apiPost('diagnostics/read', {}));
+    await loadDiagnosticsSummary();
+    await loadDiagnosticsEvents();
+  } catch (e) {
+    showToast('标记已读失败: ' + (e?.message || '未知错误'), 'error');
+  }
+}
+
+async function clearDiagnostics() {
+  try {
+    unwrapRes(await bridge.apiPost('diagnostics/clear', {}));
+    state.diagnostics.events = [];
+    await loadDiagnosticsSummary();
+    renderDiagnosticsEvents();
+  } catch (e) {
+    showToast('清空诊断失败: ' + (e?.message || '未知错误'), 'error');
+  }
 }
 
 // ------------------------------------------------------------------

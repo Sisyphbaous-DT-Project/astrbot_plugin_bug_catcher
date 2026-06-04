@@ -16,6 +16,7 @@ from .chat_buffer import ChatBufferManager
 from .analyzer import BugAnalyzer, AnalysisResult
 from .bug_store import BugStore
 from .dashboard_api import DashboardAPI
+from .diagnostics import DiagnosticsStore
 
 
 class BugCatcherPlugin(Star):
@@ -27,7 +28,8 @@ class BugCatcherPlugin(Star):
         self.buffer_mgr = ChatBufferManager(self.config)
         self.analyzer = BugAnalyzer(self.context, self.config)
         self.bug_store = BugStore()
-        self.dashboard_api = DashboardAPI(self.bug_store)
+        self.diagnostics = DiagnosticsStore(self.config)
+        self.dashboard_api = DashboardAPI(self.bug_store, self.diagnostics)
         self._active = True
         self._analysis_tasks: set[asyncio.Task] = set()
         self._scan_task: asyncio.Task | None = None
@@ -37,6 +39,7 @@ class BugCatcherPlugin(Star):
     async def initialize(self):
         """插件激活后调用，完成异步初始化。"""
         self._active = True
+        await self.diagnostics.load()
         await self.bug_store.load()
         self.buffer_mgr.start_cleanup_task()
         self._start_scan_task()
@@ -110,6 +113,11 @@ class BugCatcherPlugin(Star):
         except Exception as e:
             # 顶层保护：任何异常都不应阻断事件传播
             logger.error(f"[BugCatcher] 处理群聊消息异常: {e}", exc_info=True)
+            await self.diagnostics.record_error(
+                "处理群聊消息异常",
+                e,
+                source="main.on_group_message",
+            )
 
     # ------------------------------------------------------------------
     # 分析任务管理
@@ -133,6 +141,12 @@ class BugCatcherPlugin(Star):
                 done_task.result()
             except Exception as e:
                 logger.error(f"[BugCatcher] 分析任务异常: {e}", exc_info=True)
+                self._record_error_background(
+                    "分析任务异常",
+                    e,
+                    source="main.analysis_task",
+                    context={"umo": umo},
+                )
 
         task.add_done_callback(_done_callback)
         return True
@@ -173,6 +187,11 @@ class BugCatcherPlugin(Star):
                 raise
             except Exception as e:
                 logger.error(f"[BugCatcher] 时间阈值扫描异常: {e}", exc_info=True)
+                await self.diagnostics.record_error(
+                    "时间阈值扫描异常",
+                    e,
+                    source="main.scan_loop",
+                )
 
     async def _scan_due_buffers_once(self) -> None:
         """扫描一次所有满足触发条件的缓冲区。"""
@@ -201,6 +220,12 @@ class BugCatcherPlugin(Star):
                 existing_bugs = await self.bug_store.get_open_bugs(limit=30)
             except Exception as e:
                 logger.warning(f"[BugCatcher] 获取已有 bug 列表失败: {e}")
+                await self.diagnostics.record_warning(
+                    "获取已有 bug 列表失败",
+                    str(e),
+                    source="main.get_open_bugs",
+                    context={"umo": umo},
+                )
                 existing_bugs = []
 
             try:
@@ -209,10 +234,22 @@ class BugCatcherPlugin(Star):
                 )
             except Exception as e:
                 logger.error(f"[BugCatcher] 分析异常: {e}", exc_info=True)
+                await self.diagnostics.record_error(
+                    "分析异常",
+                    e,
+                    source="main.analyze",
+                    context={"umo": umo, "message_count": len(messages)},
+                )
                 return
 
             if result.error:
                 logger.warning(f"[BugCatcher] 分析失败: {result.error}")
+                await self.diagnostics.record_warning(
+                    "分析失败",
+                    result.error,
+                    source="main.analysis_result",
+                    context={"umo": umo, "message_count": len(messages)},
+                )
                 return
 
             if result.result == "none":
@@ -256,5 +293,32 @@ class BugCatcherPlugin(Star):
                 logger.info(f"[BugCatcher] 已保存 {len(records)} 条记录到 BugStore")
             except Exception as e:
                 logger.error(f"[BugCatcher] 保存 bug 记录失败: {e}", exc_info=True)
+                await self.diagnostics.record_error(
+                    "保存 bug 记录失败",
+                    e,
+                    source="main.save_bugs",
+                    context={"umo": umo, "bug_count": len(result.bugs)},
+                )
         finally:
             await self.buffer_mgr.mark_analysis_complete(umo)
+
+    def _record_error_background(
+        self,
+        title: str,
+        error: BaseException,
+        *,
+        source: str,
+        context: dict | None = None,
+    ) -> None:
+        """在同步回调中异步记录诊断事件。"""
+        try:
+            asyncio.create_task(
+                self.diagnostics.record_error(
+                    title,
+                    error,
+                    source=source,
+                    context=context,
+                )
+            )
+        except RuntimeError:
+            pass
