@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bug Catcher Dashboard</title>
-  <link rel="stylesheet" href="style.css?v=1.1.7">
+  <link rel="stylesheet" href="style.css?v=1.1.8">
 </head>
 <body>
   <div class="container">
@@ -17,18 +17,55 @@
     <!-- 统计卡片 -->
     <section class="stats-row" id="statsRow">
       <div class="stat-card">
+        <div class="stat-icon stat-icon-confirmed" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <path d="M12 3.2 19 6v5.1c0 4.2-2.7 8.1-7 9.7-4.3-1.6-7-5.5-7-9.7V6l7-2.8Z" />
+            <path d="M12 7.4v5.2" />
+            <path d="M12 16.2h.01" />
+          </svg>
+        </div>
         <div class="stat-value" id="statConfirmed">-</div>
         <div class="stat-label">总确认</div>
       </div>
       <div class="stat-card">
+        <div class="stat-icon stat-icon-suspected" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <circle cx="10.8" cy="10.8" r="5.8" />
+            <path d="m15.5 15.5 4.2 4.2" />
+            <path d="M10.8 7.8v3.2" />
+            <path d="M10.8 14h.01" />
+          </svg>
+        </div>
         <div class="stat-value" id="statSuspected">-</div>
         <div class="stat-label">总疑似</div>
       </div>
       <div class="stat-card">
+        <div class="stat-icon stat-icon-today" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <path d="M7 3.5v3" />
+            <path d="M17 3.5v3" />
+            <path d="M4.5 9h15" />
+            <path d="M6.2 5.5h11.6A2.2 2.2 0 0 1 20 7.7v10.1a2.2 2.2 0 0 1-2.2 2.2H6.2A2.2 2.2 0 0 1 4 17.8V7.7a2.2 2.2 0 0 1 2.2-2.2Z" />
+            <path d="M8 13h.01" />
+            <path d="M12 13h.01" />
+            <path d="M16 13h.01" />
+            <path d="M8 16.5h.01" />
+            <path d="M12 16.5h.01" />
+          </svg>
+        </div>
         <div class="stat-value" id="statToday">-</div>
         <div class="stat-label">今日新增</div>
       </div>
       <div class="stat-card">
+        <div class="stat-icon stat-icon-total" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <path d="M7 3.8h7.2L19 8.6v11.1a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 19.7V5.3a1.5 1.5 0 0 1 1.5-1.5Z" />
+            <path d="M14 3.8v4.8h4.8" />
+            <path d="M8.7 13.2c.35-.55.84-.82 1.47-.82.83 0 1.28.45 1.28 1.02 0 1.52-2.4.77-2.4 2.25 0 .58.47 1.02 1.32 1.02.56 0 1.02-.18 1.4-.55" />
+            <path d="M13.5 12.45v4.1" />
+            <path d="M15.8 12.45 14.4 16.55 13 12.45" />
+          </svg>
+        </div>
         <div class="stat-value" id="statTotal">-</div>
         <div class="stat-label">记录总数</div>
       </div>
@@ -107,6 +144,6 @@
     <span id="toastMsg"></span>
   </div>
 
-  <script src="app.js?v=1.1.7"></script>
+  <script src="app.js?v=1.1.8"></script>
 </body>
 </html>
