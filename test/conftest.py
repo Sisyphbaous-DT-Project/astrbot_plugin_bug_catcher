@@ -7,11 +7,10 @@ Pytest 配置和全局 fixtures。
 
 from __future__ import annotations
 
-import asyncio
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

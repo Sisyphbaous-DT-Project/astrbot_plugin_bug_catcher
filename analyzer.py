@@ -163,8 +163,8 @@ class BugAnalyzer:
 
         # 分割为头部说明、消息行
         lines = prompt.split("\n")
-        header = [l for l in lines if not l.startswith("[")]
-        msg_lines = [l for l in lines if l.startswith("[")]
+        header = [line for line in lines if not line.startswith("[")]
+        msg_lines = [line for line in lines if line.startswith("[")]
 
         # 从最早的消息开始删除，直到 token 足够
         while msg_lines and self._estimate_tokens(

@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from astrbot_plugin_bug_catcher.chat_buffer import ChatBufferManager, MessageRecord
+from astrbot_plugin_bug_catcher.chat_buffer import ChatBufferManager
 
 
 @pytest.mark.unit

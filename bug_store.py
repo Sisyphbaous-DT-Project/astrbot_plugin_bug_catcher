@@ -10,15 +10,15 @@ import asyncio
 import json
 import os
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from astrbot.api import logger
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
 from .chat_buffer import MessageRecord
-from .analyzer import BugItem, AnalysisResult
+from .analyzer import AnalysisResult
 
 
 @dataclass

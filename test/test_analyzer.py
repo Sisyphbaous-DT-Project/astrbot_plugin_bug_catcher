@@ -5,8 +5,9 @@ BugAnalyzer 单元测试。
 from __future__ import annotations
 
 import pytest
+from unittest.mock import MagicMock
 
-from astrbot_plugin_bug_catcher.analyzer import BugAnalyzer, AnalysisResult, BugItem
+from astrbot_plugin_bug_catcher.analyzer import BugAnalyzer
 
 
 @pytest.mark.unit
@@ -240,5 +241,4 @@ class TestBugAnalyzer:
         assert result.error == "empty response"
 
 
-# 需要导入 MagicMock 用于 test_analyze_success
-from unittest.mock import MagicMock
+

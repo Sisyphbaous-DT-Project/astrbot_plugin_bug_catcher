@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-from astrbot_plugin_bug_catcher.bug_store import BugStore, BugRecord
+from astrbot_plugin_bug_catcher.bug_store import BugStore
 from astrbot_plugin_bug_catcher.analyzer import AnalysisResult, BugItem
 from astrbot_plugin_bug_catcher.chat_buffer import MessageRecord
 
