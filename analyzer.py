@@ -2,7 +2,7 @@
 AI 分析引擎。
 
 调用 LLM 分析聊天记录，识别 bug 反馈，解析 JSON 输出。
-支持：图片/视频清洗、已有 bug 去重、群信息溯源。
+支持：图片/视频清洗、已有 bug 去重、群信息溯源、一次分析识别多条 bug。
 """
 
 from __future__ import annotations
@@ -29,6 +29,8 @@ _VIDEO_URL_RE = re.compile(
     r"https?://[^\s<>\"{}|\\^`\[\]]+\.(?:mp4|avi|mov|webm|flv|mkv)(?:\?[^\s]*)?",
     re.IGNORECASE,
 )
+# 用于判断清洗后是否只剩占位符
+_EMPTY_AFTER_SANITIZE_RE = re.compile(r"^(\[(?:图片|视频)\]\s*)+$")
 
 
 @dataclass
@@ -81,6 +83,12 @@ class BugAnalyzer:
         }
     ]
 }
+
+重要规则：
+- 一次分析中可能包含多条独立的 bug 报告（不同用户报告不同的问题，或同一用户报告了多个不同的 bug）
+- 请仔细区分不同的问题本质，将每个独立的 bug 作为一个单独的对象放入 bugs 数组
+- 不要将多个不同的 bug 合并成一条描述，每个 bug 应有独立的 severity、summary、analysis 和 related_messages
+- 如果群聊中确实存在多条不同来源的 bug 反馈，bugs 数组应包含所有独立的 bug 记录
 
 判断标准：
 - "none"：聊天记录完全是闲聊、技术讨论、使用教程、功能咨询等，没有任何 bug 报告
@@ -152,7 +160,6 @@ class BugAnalyzer:
         existing_bugs: List[Dict[str, Any]] | None = None,
     ) -> str:
         """构建 User Prompt，包含群信息、消息记录、已有 bug 列表。"""
-        # 群信息展示
         group_display = self._format_umo(umo)
         lines = [
             f"群聊信息：{group_display}",
@@ -166,21 +173,24 @@ class BugAnalyzer:
             content = self._sanitize_content(msg.content)
             lines.append(f"[{idx}] {time_str} {msg.sender_name}: {content}")
 
-        # 已有 bug 列表（用于去重）
+        # 已有 bug 列表（用于去重），动态限制数量避免超出 token
         if existing_bugs:
+            max_existing = max(3, 15 - len(messages) // 20)
+            existing_slice = existing_bugs[:max_existing]
             lines.append("")
             lines.append("已记录的 bug 列表（供参考，避免重复记录）：")
-            for i, bug in enumerate(existing_bugs[:30], 1):  # 最多 30 条，控制 token
+            for i, bug in enumerate(existing_slice, 1):
                 status_str = f"[{bug.get('status', 'open')}]"
                 lines.append(
-                    f"{i}. [{bug.get('severity', '?')}] {bug.get('summary', '')} "
+                    f"* {i}. [{bug.get('severity', '?')}] {bug.get('summary', '')} "
                     f"{status_str} (ID: {bug.get('id', '?')})"
                 )
             lines.append("")
 
         lines.append(
             "请分析这些记录中是否包含对 AstrBot 或其插件的 bug 反馈，"
-            "输出 JSON 结果。注意区分新 bug 和已记录的重复 bug。"
+            "输出 JSON 结果。注意区分新 bug 和已记录的重复 bug，"
+            "如果存在多条独立的 bug 报告，请分别列出。"
         )
         return "\n".join(lines)
 
@@ -195,9 +205,9 @@ class BugAnalyzer:
         # 替换视频 URL
         content = _VIDEO_URL_RE.sub("[视频]", content)
 
-        # 如果清洗后只剩占位符，保留占位符
         stripped = content.strip()
-        if stripped in ("[图片]", "[视频]", "[图片][视频]", "[视频][图片]"):
+        # 如果清洗后只剩占位符（任意数量），保留
+        if _EMPTY_AFTER_SANITIZE_RE.match(stripped):
             return stripped
 
         # 如果清洗后为空
@@ -209,7 +219,6 @@ class BugAnalyzer:
     @staticmethod
     def _format_umo(umo: str) -> str:
         """将 UMO 格式化为可读群信息。"""
-        # UMO 格式: platform:type:session_id
         parts = umo.split(":", 2)
         if len(parts) >= 3:
             return f"平台={parts[0]}, 群/会话 ID={parts[2]}"
@@ -224,7 +233,7 @@ class BugAnalyzer:
         return int(len(text) * self._TOKENS_PER_CHAR)
 
     def _truncate_if_needed(self, prompt: str) -> str:
-        """如果 prompt 过长，截断最早的消息，保留尾部指令。"""
+        """如果 prompt 过长，截断最早的消息，必要时也截断已有 bug 列表。"""
         system_tok = self._estimate_tokens(self._SYSTEM_PROMPT)
         prompt_tok = self._estimate_tokens(prompt)
         total_tok = system_tok + prompt_tok
@@ -232,26 +241,36 @@ class BugAnalyzer:
         if total_tok <= self._MAX_PROMPT_TOKENS:
             return prompt
 
-        logger.warning(
-            f"[Analyzer] Prompt 过长（估算 {total_tok} tokens），开始截断早期消息"
-        )
+        logger.warning(f"[Analyzer] Prompt 过长（估算 {total_tok} tokens），开始截断")
 
-        # 分割为头部说明、消息行
         lines = prompt.split("\n")
-        header = [line for line in lines if not line.startswith("[")]
+        # 三类行：消息行 [N]、已有 bug 行 * N.、头部/尾部
+        header = [
+            line
+            for line in lines
+            if not line.startswith("[") and not line.startswith("* ")
+        ]
         msg_lines = [line for line in lines if line.startswith("[")]
+        bug_lines = [line for line in lines if line.startswith("* ")]
 
-        # 从最早的消息开始删除，直到 token 足够
-        while (
-            msg_lines
-            and self._estimate_tokens("\n".join(header + msg_lines)) + system_tok
-            > self._MAX_PROMPT_TOKENS
-        ):
+        def _current_tok() -> int:
+            return (
+                self._estimate_tokens("\n".join(header + bug_lines + msg_lines))
+                + system_tok
+            )
+
+        # 先截断最早的消息
+        while msg_lines and _current_tok() > self._MAX_PROMPT_TOKENS:
             msg_lines.pop(0)
 
-        truncated = "\n".join(header + msg_lines)
+        # 如果还不够，截断最早的已有 bug 记录
+        while bug_lines and _current_tok() > self._MAX_PROMPT_TOKENS:
+            bug_lines.pop(0)
+
+        truncated = "\n".join(header + bug_lines + msg_lines)
         logger.info(
-            f"[Analyzer] 截断后剩余 {len(msg_lines)} 条消息，"
+            f"[Analyzer] 截断后剩余 {len(msg_lines)} 条消息 + "
+            f"{len(bug_lines)} 条参考 bug，"
             f"估算 tokens: {self._estimate_tokens(truncated) + system_tok}"
         )
         return truncated
@@ -316,7 +335,6 @@ class BugAnalyzer:
 
     def _extract_json_block(self, text: str) -> str | None:
         """从文本中提取 JSON 代码块或 JSON 对象。"""
-        # 尝试匹配 markdown 代码块
         patterns = [
             r"```json\s*(.*?)\s*```",  # ```json ... ```
             r"```\s*(.*?)\s*```",  # ``` ... ```
@@ -332,9 +350,7 @@ class BugAnalyzer:
 
     def _fix_json(self, text: str) -> str:
         """尝试修复常见的 JSON 格式问题。"""
-        # 去除 markdown 标记
         text = re.sub(r"```json\s*|\s*```", "", text)
-        # 去除尾部逗号
         text = re.sub(r",(\s*[}\]])", r"\1", text)
         return text.strip()
 

@@ -49,7 +49,7 @@ class ChatBufferManager:
             )
             self.batch_size = self.max_history
         self.time_threshold_min = max(1, config.get("time_threshold_min", 30))
-        self.analysis_interval_min = max(0, config.get("analysis_interval_min", 5))
+        self.analysis_interval_min = max(1, config.get("analysis_interval_min", 5))
         self.buffer_ttl_sec = 24 * 3600  # 24 小时未活跃则清理
 
         # UMO -> deque[MessageRecord]
@@ -148,9 +148,14 @@ class ChatBufferManager:
     # 缓冲区操作
     # ------------------------------------------------------------------
 
-    def clear_buffer(self, umo: str) -> None:
+    async def clear_buffer(self, umo: str) -> None:
         """清空指定 UMO 的缓冲区。"""
-        self._buffers.pop(umo, None)
+        lock = self._locks.get(umo)
+        if lock:
+            async with lock:
+                self._buffers.pop(umo, None)
+        else:
+            self._buffers.pop(umo, None)
         logger.debug(f"[ChatBuffer] UMO={umo} 缓冲区已清空")
 
     def get_buffer_size(self, umo: str) -> int:
@@ -221,8 +226,16 @@ class ChatBufferManager:
             if now - ts > self.buffer_ttl_sec
         ]
         for umo in expired:
-            self._buffers.pop(umo, None)
-            self._last_analysis.pop(umo, None)
-            self._last_active.pop(umo, None)
-            self._locks.pop(umo, None)
+            lock = self._locks.get(umo)
+            if lock:
+                async with lock:
+                    self._buffers.pop(umo, None)
+                    self._last_analysis.pop(umo, None)
+                    self._last_active.pop(umo, None)
+                    self._locks.pop(umo, None)
+            else:
+                self._buffers.pop(umo, None)
+                self._last_analysis.pop(umo, None)
+                self._last_active.pop(umo, None)
+            logger.info(f"[ChatBuffer] UMO={umo} 缓冲区已过期清理")
             logger.info(f"[ChatBuffer] UMO={umo} 缓冲区已过期清理")

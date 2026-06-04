@@ -109,7 +109,7 @@ class TestChatBufferManager:
         assert trigger.triggered is True
 
         # 清空缓冲区（模拟分析完成后的行为）
-        mgr.clear_buffer("test")
+        await mgr.clear_buffer("test")
 
         # 立即再添加 10 条（在冷却期内）
         for i in range(10, 20):
@@ -163,7 +163,7 @@ class TestChatBufferManager:
                 sender_name="用户",
                 content=f"msg {i}",
             )
-        mgr.clear_buffer("test")
+        await mgr.clear_buffer("test")
         assert mgr.get_buffer_size("test") == 0
 
     @pytest.mark.asyncio

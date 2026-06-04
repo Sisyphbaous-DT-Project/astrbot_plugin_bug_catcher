@@ -4,6 +4,8 @@ AstrBot Bug Catcher Plugin
 自动监听群聊消息，利用 AI 识别 bug 反馈并记录到 Dashboard。
 """
 
+import logging
+
 from astrbot.api.star import Context, Star
 from astrbot.api import logger
 from astrbot.api.event.filter import event_message_type, EventMessageType
@@ -126,11 +128,7 @@ class BugCatcherPlugin(Star):
             self.buffer_mgr.clear_buffer(umo)
             return
 
-        log_level = (
-            __import__("logging").WARNING
-            if result.result == "suspected"
-            else __import__("logging").ERROR
-        )
+        log_level = logging.WARNING if result.result == "suspected" else logging.ERROR
         for bug in result.bugs:
             logger.log(
                 log_level,
