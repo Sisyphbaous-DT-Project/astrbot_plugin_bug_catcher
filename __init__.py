@@ -1,0 +1,1 @@
+"""AstrBot Bug Catcher Plugin."""

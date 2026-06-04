@@ -137,6 +137,28 @@ class TestBugAnalyzer:
         assert result.error != ""
         assert "invalid result value" in result.error
 
+    def test_parse_duplicate_of_id_coerced_to_string(self, analyzer):
+        """duplicate_of_id 应为字符串，即使 LLM 返回整数。"""
+        text = (
+            '{"result": "confirmed", "bugs": [{"severity": "high", '
+            '"summary": "x", "analysis": "y", "related_messages": [0], '
+            '"is_duplicate": true, "duplicate_of_id": 12345}]}'
+        )
+        result = analyzer._parse_response(text)
+        assert result.result == "confirmed"
+        assert len(result.bugs) == 1
+        assert result.bugs[0].duplicate_of_id == "12345"
+
+    def test_parse_related_messages_with_strings(self, analyzer):
+        """related_messages 包含字符串索引时应被容错处理。"""
+        text = (
+            '{"result": "confirmed", "bugs": [{"severity": "medium", '
+            '"summary": "x", "analysis": "y", "related_messages": ["0", 1, "abc"]}]}'
+        )
+        result = analyzer._parse_response(text)
+        assert result.result == "confirmed"
+        assert result.bugs[0].related_messages == ["0", 1, "abc"]
+
     # ------------------------------------------------------------------
     # 字段校验
     # ------------------------------------------------------------------

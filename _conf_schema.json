@@ -39,6 +39,7 @@
     "description": "用于 Bug 分析的 LLM 提供商",
     "type": "string",
     "_special": "select_provider",
-    "hint": "留空则使用当前默认模型"
+    "hint": "留空则使用当前默认模型",
+    "default": ""
   }
 }

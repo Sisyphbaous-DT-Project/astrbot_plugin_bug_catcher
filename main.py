@@ -39,6 +39,7 @@ class BugCatcherPlugin(Star):
     async def terminate(self):
         """插件禁用时调用，释放资源。"""
         self.buffer_mgr.stop_cleanup_task()
+        self.dashboard_api.unregister(self.context)
         logger.info("[BugCatcher] 插件已停用，资源已释放")
 
     # ------------------------------------------------------------------

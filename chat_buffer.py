@@ -221,6 +221,7 @@ class ChatBufferManager:
                 await self._do_cleanup()
         except asyncio.CancelledError:
             logger.debug("[ChatBuffer] 清理任务被取消")
+            raise
         except Exception as e:
             logger.error(f"[ChatBuffer] 清理任务异常: {e}")
 
@@ -236,6 +237,12 @@ class ChatBufferManager:
             lock = self._locks.get(umo)
             if lock:
                 async with lock:
+                    # 锁内重检查：避免 TOCTOU 竞态
+                    if (
+                        time.time() - self._last_active.get(umo, 0)
+                        <= self.buffer_ttl_sec
+                    ):
+                        continue
                     self._buffers.pop(umo, None)
                     self._last_analysis.pop(umo, None)
                     self._last_active.pop(umo, None)

@@ -21,6 +21,7 @@ class DashboardAPI:
     def __init__(self, bug_store: BugStore):
         self.bug_store = bug_store
         self.prefix = "/astrbot_plugin_bug_catcher"
+        self._registered: list[tuple[str, list[str]]] = []
 
     # ------------------------------------------------------------------
     # 注册到 AstrBot
@@ -41,7 +42,22 @@ class DashboardAPI:
                 methods=methods,
                 desc=handler.__doc__ or "",
             )
+            self._registered.append((route, methods))
             logger.info(f"[DashboardAPI] 注册路由: {route} [{','.join(methods)}]")
+
+    def unregister(self, context) -> None:
+        """从 AstrBot Web 路由系统中注销本插件的所有 API。"""
+        apis = getattr(context, "registered_web_apis", None)
+        if apis is None:
+            return
+        for route, methods in self._registered:
+            context.registered_web_apis[:] = [
+                api
+                for api in context.registered_web_apis
+                if not (api[0] == route and api[2] == methods)
+            ]
+            logger.info(f"[DashboardAPI] 注销路由: {route} [{','.join(methods)}]")
+        self._registered.clear()
 
     # ------------------------------------------------------------------
     # 响应辅助
@@ -68,7 +84,7 @@ class DashboardAPI:
         """获取 bug 列表（支持分页、过滤）。"""
         # 解析查询参数
         page = _int_param(request.args, "page", 1, min_val=1)
-        page_size = _int_param(request.args, "page_size", 20, min_val=1)
+        page_size = _int_param(request.args, "page_size", 20, min_val=1, max_val=100)
         result = request.args.get("result") or None
         severity = request.args.get("severity") or None
         status = request.args.get("status") or None
@@ -161,11 +177,16 @@ class DashboardAPI:
 # ------------------------------------------------------------------
 
 
-def _int_param(args, key: str, default: int, min_val: int = 1) -> int:
-    """从查询参数解析整数（自动 clamp 到 min_val）。"""
+def _int_param(
+    args, key: str, default: int, min_val: int = 1, max_val: int | None = None
+) -> int:
+    """从查询参数解析整数（自动 clamp 到 [min_val, max_val]）。"""
     try:
         val = int(args.get(key, default))
-        return max(min_val, val)
+        val = max(min_val, val)
+        if max_val is not None:
+            val = min(max_val, val)
+        return val
     except (ValueError, TypeError):
         return default
 

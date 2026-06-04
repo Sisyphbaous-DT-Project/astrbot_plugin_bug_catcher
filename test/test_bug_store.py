@@ -291,3 +291,23 @@ class TestBugStore:
         results = await asyncio.gather(*[add_batch(i) for i in range(10)])
         total_bugs = sum(len(r) for r in results)
         assert total_bugs == 20  # 10 batches * 2 bugs each
+
+    # ------------------------------------------------------------------
+    # 防御性容错
+    # ------------------------------------------------------------------
+
+    def test_find_primary_message_with_string_indices(self, sample_messages):
+        """related_messages 包含字符串索引时应正确解析。"""
+        from astrbot_plugin_bug_catcher.bug_store import BugStore
+
+        msg = BugStore._find_primary_message(["0", 1, "abc"], sample_messages)
+        assert msg is not None
+        assert msg.sender_name == "用户A"
+
+    def test_find_primary_message_with_invalid_indices(self, sample_messages):
+        """related_messages 全为无效索引时应回退到首条消息。"""
+        from astrbot_plugin_bug_catcher.bug_store import BugStore
+
+        msg = BugStore._find_primary_message(["xyz", -1, 99], sample_messages)
+        assert msg is not None
+        assert msg.sender_name == "用户A"

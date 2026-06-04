@@ -3,6 +3,7 @@ desc: 自动监听群聊消息，利用 AI 识别 bug 反馈并记录到 Dashboa
 version: v1.1.1
 author: AI Assistant
 repo: https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_bug_catcher
+astrbot_version: ">=4.5.7"
 
 # 插件标签，用于分类
 tags:

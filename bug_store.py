@@ -250,7 +250,11 @@ class BugStore:
         related_indices: List[int], messages: List[MessageRecord]
     ) -> MessageRecord | None:
         """从 related_messages 索引中找到第一条有效消息。"""
-        for idx in related_indices:
+        for raw in related_indices:
+            try:
+                idx = int(raw)
+            except (TypeError, ValueError):
+                continue
             if 0 <= idx < len(messages):
                 return messages[idx]
         return messages[0] if messages else None

@@ -387,7 +387,7 @@ class BugAnalyzer:
                 analysis=bug_data.get("analysis", "") or "",
                 related_messages=bug_data.get("related_messages", []) or [],
                 is_duplicate=bool(bug_data.get("is_duplicate", False)),
-                duplicate_of_id=bug_data.get("duplicate_of_id", "") or "",
+                duplicate_of_id=str(bug_data.get("duplicate_of_id", "") or ""),
             )
             result.bugs.append(bug)
 
