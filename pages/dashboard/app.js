@@ -12,7 +12,8 @@ const state = {
     severity: '',
     status: '',
     result: ''
-  }
+  },
+  pending: new Set()
 };
 
 // Bridge SDK（AstrBot 注入的全局对象）
@@ -85,6 +86,17 @@ function bindEvents() {
   document.getElementById('modalClose').addEventListener('click', closeModal);
   document.getElementById('detailModal').addEventListener('click', (e) => {
     if (e.target.id === 'detailModal') closeModal();
+  });
+
+  // 确认弹窗事件
+  document.getElementById('confirmModalClose').addEventListener('click', closeConfirmModal);
+  document.getElementById('confirmNo').addEventListener('click', closeConfirmModal);
+  document.getElementById('confirmModal').addEventListener('click', (e) => {
+    if (e.target.id === 'confirmModal') closeConfirmModal();
+  });
+  document.getElementById('confirmYes').addEventListener('click', () => {
+    if (confirmCallback) confirmCallback();
+    closeConfirmModal();
   });
 }
 
@@ -162,6 +174,7 @@ function renderBugs() {
     const firstReporter = (bug.report_history && bug.report_history[0])
       ? bug.report_history[0].reporter_name : '未知';
     const safeId = escapeHtml(bug.id);
+    const isPending = state.pending.has(safeId);
 
     return `
     <div class="bug-card" data-id="${safeId}">
@@ -181,10 +194,10 @@ function renderBugs() {
       <div class="bug-actions">
         <button class="btn btn-primary btn-small" onclick="showDetail('${safeId}')">详情</button>
         ${bug.status === 'open' ? `
-          <button class="btn btn-success btn-small" onclick="resolveBug('${safeId}')">标记已解决</button>
-          <button class="btn btn-success btn-small" onclick="ignoreBug('${safeId}')">忽略</button>
+          <button class="btn btn-success btn-small" onclick="resolveBug('${safeId}')" ${isPending ? 'disabled' : ''}>${isPending ? '处理中...' : '标记已解决'}</button>
+          <button class="btn btn-success btn-small" onclick="ignoreBug('${safeId}')" ${isPending ? 'disabled' : ''}>${isPending ? '处理中...' : '忽略'}</button>
         ` : ''}
-        <button class="btn btn-danger btn-small" onclick="deleteBug('${safeId}')">删除</button>
+        <button class="btn btn-danger btn-small" onclick="deleteBug('${safeId}')" ${isPending ? 'disabled' : ''}>${isPending ? '处理中...' : '删除'}</button>
       </div>
     </div>
   `}).join('');
@@ -299,6 +312,30 @@ function closeModal() {
   document.getElementById('detailModal').classList.remove('show');
 }
 
+let confirmCallback = null;
+
+function showConfirmModal(message, onConfirm) {
+  document.getElementById('confirmMessage').textContent = message;
+  document.getElementById('confirmModal').classList.add('show');
+  confirmCallback = onConfirm;
+}
+
+function closeConfirmModal() {
+  document.getElementById('confirmModal').classList.remove('show');
+  confirmCallback = null;
+}
+
+let toastTimeout;
+function showToast(message, type = 'info') {
+  const toast = document.getElementById('toast');
+  const msg = document.getElementById('toastMsg');
+  msg.textContent = message;
+  toast.className = `toast ${type}`;
+  toast.classList.add('show');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
 async function resolveBug(id) {
   await updateStatus(id, 'resolved');
 }
@@ -308,23 +345,41 @@ async function ignoreBug(id) {
 }
 
 async function updateStatus(id, status) {
+  if (state.pending.has(id)) return;
+  state.pending.add(id);
+  renderBugs();
+
   try {
     unwrapRes(await bridge.apiPost(`bugs/${id}/status`, { status }));
+    showToast('状态更新成功', 'success');
     await loadBugs();
     await loadStats();
   } catch (e) {
-    console.error('[BugCatcher] 更新失败:', e?.message || e);
+    showToast('更新失败: ' + (e?.message || '未知错误'), 'error');
+  } finally {
+    state.pending.delete(id);
+    renderBugs();
   }
 }
 
 async function deleteBug(id) {
-  try {
-    unwrapRes(await bridge.apiPost(`bugs/${id}/delete`, {}));
-    await loadBugs();
-    await loadStats();
-  } catch (e) {
-    console.error('[BugCatcher] 删除失败:', e?.message || e);
-  }
+  showConfirmModal('确定删除此记录？删除后不可恢复。', async () => {
+    if (state.pending.has(id)) return;
+    state.pending.add(id);
+    renderBugs();
+
+    try {
+      unwrapRes(await bridge.apiPost(`bugs/${id}/delete`, {}));
+      showToast('删除成功', 'success');
+      await loadBugs();
+      await loadStats();
+    } catch (e) {
+      showToast('删除失败: ' + (e?.message || '未知错误'), 'error');
+    } finally {
+      state.pending.delete(id);
+      renderBugs();
+    }
+  });
 }
 
 function goPage(page) {

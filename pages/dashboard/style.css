@@ -432,6 +432,63 @@ body {
   color: var(--text-muted);
 }
 
+/* 确认弹窗 */
+.confirm-modal { max-width: 400px; }
+.confirm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  color: var(--text);
+  font-size: 14px;
+  box-shadow: var(--shadow);
+  z-index: 2000;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.toast.error {
+  border-color: var(--danger);
+  background: rgba(220, 38, 38, 0.1);
+}
+.toast.success {
+  border-color: var(--success);
+  background: rgba(22, 163, 74, 0.1);
+}
+
+/* 按钮禁用 */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 次按钮 */
+.btn-secondary {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover {
+  background: var(--surface-hover);
+}
+
 /* 响应式 */
 @media (max-width: 640px) {
   .container { padding: 12px; }
