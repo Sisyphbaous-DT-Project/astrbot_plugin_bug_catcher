@@ -300,12 +300,12 @@ function closeModal() {
 }
 
 async function resolveBug(id) {
-  if (!confirm('确定标记为已解决？')) return;
+  if (!safeConfirm('确定标记为已解决？')) return;
   await updateStatus(id, 'resolved');
 }
 
 async function ignoreBug(id) {
-  if (!confirm('确定忽略此记录？')) return;
+  if (!safeConfirm('确定忽略此记录？')) return;
   await updateStatus(id, 'ignored');
 }
 
@@ -315,18 +315,18 @@ async function updateStatus(id, status) {
     await loadBugs();
     await loadStats();
   } catch (e) {
-    alert('更新失败: ' + (e?.message || '未知错误'));
+    safeAlert('更新失败: ' + (e?.message || '未知错误'));
   }
 }
 
 async function deleteBug(id) {
-  if (!confirm('确定删除此记录？删除后不可恢复。')) return;
+  if (!safeConfirm('确定删除此记录？删除后不可恢复。')) return;
   try {
     unwrapRes(await bridge.apiPost(`bugs/${id}/delete`, {}));
     await loadBugs();
     await loadStats();
   } catch (e) {
-    alert('删除失败: ' + (e?.message || '未知错误'));
+    safeAlert('删除失败: ' + (e?.message || '未知错误'));
   }
 }
 
@@ -382,4 +382,19 @@ function formatTime(val, isTimestamp) {
   if (isNaN(date.getTime())) return '-';
   const pad = n => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// AstrBot Dashboard webview 可能阻断 confirm()/alert() (iframe sandbox)，
+// 使用 try-catch 包裹，不可用时静默降级
+function safeConfirm(msg) {
+  try {
+    if (typeof confirm === 'function') return confirm(msg);
+  } catch (_) {}
+  return true;
+}
+
+function safeAlert(msg) {
+  try {
+    if (typeof alert === 'function') alert(msg);
+  } catch (_) {}
 }
