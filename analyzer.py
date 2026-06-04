@@ -197,7 +197,9 @@ primary_message_index 规则（重要）：
         for idx, msg in enumerate(messages):
             time_str = time.strftime("%H:%M:%S", time.localtime(msg.timestamp))
             content = self._sanitize_content(msg.content)
-            lines.append(f"[{idx}] {time_str} {msg.sender_name}: {content}")
+            # 昵称可能包含换行符，不做处理会导致 Prompt 格式错乱（注入风险）
+            sender_name = msg.sender_name.replace("\n", " ")
+            lines.append(f"[{idx}] {time_str} {sender_name}: {content}")
 
         # 已有 bug 列表（用于去重），动态限制数量避免参考列表过长干扰分析
         if existing_bugs:
@@ -207,8 +209,10 @@ primary_message_index 规则（重要）：
             lines.append("已记录的 bug 列表（供参考，避免重复记录）：")
             for i, bug in enumerate(existing_slice, 1):
                 status_str = f"[{bug.get('status', 'open')}]"
+                # summary 可能包含换行符，替换避免破坏 Prompt 格式
+                summary = str(bug.get("summary", "") or "").replace("\n", " ")
                 lines.append(
-                    f"* {i}. [{bug.get('severity', '?')}] {bug.get('summary', '')} "
+                    f"* {i}. [{bug.get('severity', '?')}] {summary} "
                     f"{status_str} (ID: {bug.get('id', '?')})"
                 )
             lines.append("")
@@ -310,23 +314,33 @@ primary_message_index 规则（重要）：
         logger.warning(f"[Analyzer] 无法解析 LLM 输出: {response_text[:200]}...")
         return result
 
-    def _extract_json_block(self, text: str) -> str | None:
+    @staticmethod
+    def _extract_json_block(text: str) -> str | None:
         """从文本中提取 JSON 代码块或 JSON 对象。"""
+        # 第 1/2 层：markdown 代码块
         patterns = [
             r"```json\s*(.*?)\s*```",  # ```json ... ```
             r"```\s*(.*?)\s*```",  # ``` ... ```
-            r"(\{[\s\S]*?\})",  # 最外层 {...} — 非贪婪匹配
         ]
         for pat in patterns:
             match = re.search(pat, text, re.DOTALL)
             if match:
                 extracted = match.group(1).strip()
                 if extracted.startswith("{") or extracted.startswith("["):
-                    # 对最宽松的 {...} fallback，要求必须包含 result 关键字，
-                    # 避免捕获到解释性文字中的无关 JSON 片段
-                    if pat == patterns[-1] and '"result"' not in extracted:
-                        continue
                     return extracted
+
+        # 第 3 层：用 JSONDecoder 从文本中找合法的 JSON 对象
+        # 比正则贪婪/非贪婪匹配更可靠，能正确处理嵌套结构
+        decoder = json.JSONDecoder()
+        for match in re.finditer(r"\{", text):
+            idx = match.start()
+            try:
+                obj, end = decoder.raw_decode(text, idx)
+                if isinstance(obj, dict) and "result" in obj:
+                    # raw_decode 返回的 end 是相对于 text 的绝对索引
+                    return text[idx:end]
+            except json.JSONDecodeError:
+                continue
         return None
 
     def _fix_json(self, text: str) -> str:
@@ -367,11 +381,16 @@ primary_message_index 规则（重要）：
                 except (TypeError, ValueError):
                     pmi = -1
 
+            # related_messages 必须是列表，否则后续遍历会 TypeError
+            raw_rel = bug_data.get("related_messages", []) or []
+            if not isinstance(raw_rel, list):
+                raw_rel = []
+
             bug = BugItem(
                 severity=self._validate_severity(bug_data.get("severity", "medium")),
                 summary=bug_data.get("summary", "") or "",
                 analysis=bug_data.get("analysis", "") or "",
-                related_messages=bug_data.get("related_messages", []) or [],
+                related_messages=raw_rel,
                 is_duplicate=bool(bug_data.get("is_duplicate", False)),
                 duplicate_of_id=str(bug_data.get("duplicate_of_id", "") or ""),
                 primary_message_index=pmi,
@@ -382,8 +401,8 @@ primary_message_index 规则（重要）：
 
     @staticmethod
     def _validate_severity(value: Any) -> str:
-        """验证 severity 值是否合法。"""
+        """验证 severity 值是否合法（大小写不敏感）。"""
         valid = {"low", "medium", "high", "critical"}
-        if isinstance(value, str) and value in valid:
-            return value
+        if isinstance(value, str) and value.lower() in valid:
+            return value.lower()
         return "medium"
