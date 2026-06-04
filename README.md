@@ -111,4 +111,16 @@ pytest test/ --cov=astrbot_plugin_bug_catcher --cov-report=term-missing
 
 ## License 许可证
 
-MIT
+MIT License © 2026 C₂₂H₂₅NO₆
+
+### 使用声明
+
+本项目基于 MIT 许可证开放。你可以自由使用、修改、分发，包括商业用途。
+
+但有一件事我恳请每一位使用者：**请不要在仅做最低限度修改（如改个名字、换个图标、删除版权声明）后，将其作为独立产品直接售卖。** 这种行为并非“二次开发”，而是对原作者劳动成果的轻慢，也对购买者构成了误导。
+
+如果你基于本项目进行了**实质性改进**——无论是功能增强、性能优化、适配新的场景，还是将其融入更大的解决方案——我欢迎你以此开展商业活动，并真诚地祝你成功。我只希望你在适当位置保留一行上游来源的说明，让后来者知道这座房子的地基是谁打的。
+
+**关于维权：** 我没有精力、也不打算对任何使用者采取法律行动。写下这段话，只是因为我觉得“改个名字就卖”这件事很过分，而我想让你知道这一点。如果你是一个有尊严的开发者，相信你已经明白了我的意思。
+
+> This project is released under the MIT License. Please do not repackage it as a standalone product after only cosmetic changes. If you have made substantial improvements, I welcome you to build a business around it. I only ask for a line of attribution. I will not take legal action against anyone; I write this simply because reselling with a new name is deeply disrespectful.
