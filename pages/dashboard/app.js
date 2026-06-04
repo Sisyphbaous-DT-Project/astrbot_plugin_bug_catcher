@@ -110,20 +110,10 @@ async function loadStats() {
     document.getElementById('statConfirmed').textContent = data.total_confirmed || 0;
     document.getElementById('statSuspected').textContent = data.total_suspected || 0;
     document.getElementById('statTotal').textContent = (data.total_confirmed || 0) + (data.total_suspected || 0);
-    // statToday 由 loadBugs 根据当前页数据计算并更新
+    document.getElementById('statToday').textContent = data.today_count || 0;
   } catch (e) {
     console.error('加载统计失败:', e);
   }
-}
-
-function updateStatToday() {
-  const today = new Date().toISOString().slice(0, 10);
-  const todayCount = state.bugs.filter(b => {
-    if (!b.created_at) return false;
-    const d = new Date(b.created_at);
-    return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === today;
-  }).length;
-  document.getElementById('statToday').textContent = todayCount;
 }
 
 async function loadBugs() {
@@ -145,7 +135,6 @@ async function loadBugs() {
 
     renderBugs();
     renderPagination();
-    updateStatToday();
   } catch (e) {
     showError('加载失败: ' + (e?.message || '未知错误'));
   }

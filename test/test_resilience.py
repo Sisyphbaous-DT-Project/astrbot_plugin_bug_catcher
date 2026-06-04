@@ -322,9 +322,11 @@ class TestResilienceDemo:
         print(
             f"    ✅ umo_a 并发 200 条 → 实际缓存 {mgr.get_buffer_size('umo_a')} 条（maxlen=50）"
         )
-        print(f"    ✅ umo_b 并发 50 条 → 实际缓存 {mgr.get_buffer_size('umo_b')} 条")
+        print(
+            f"    ✅ umo_b 并发 50 条 → 触发批次已取出，实际缓存 {mgr.get_buffer_size('umo_b')} 条"
+        )
         assert mgr.get_buffer_size("umo_a") == 50
-        assert mgr.get_buffer_size("umo_b") == 50
+        assert mgr.get_buffer_size("umo_b") == 0
 
         # 模拟 TTL 清理：伪造过期 UMO
         await mgr.add_message("expired_umo", "u1", "用户", "msg")

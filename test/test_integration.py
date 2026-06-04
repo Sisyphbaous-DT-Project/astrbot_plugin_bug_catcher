@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -105,6 +106,7 @@ class TestBugCatcherPluginIntegration:
             ) as mock_analyze:
                 # 发送 1 条消息（batch_size=3，实际触发由 mock 控制）
                 await plugin.on_group_message(mock_event)
+                await asyncio.sleep(0)
                 mock_add.assert_awaited_once()
                 mock_analyze.assert_awaited_once()
 
@@ -167,15 +169,17 @@ class TestBugCatcherPluginIntegration:
             with patch.object(
                 plugin.bug_store, "add_bugs_from_analysis", new_callable=AsyncMock
             ) as mock_save:
-                with patch.object(plugin.buffer_mgr, "clear_buffer") as mock_clear:
+                with patch.object(
+                    plugin.buffer_mgr, "mark_analysis_complete", new_callable=AsyncMock
+                ) as mock_complete:
                     await plugin._analyze_and_store("test_umo", messages)
                     mock_analyze.assert_awaited_once()
                     mock_save.assert_awaited_once()
-                    mock_clear.assert_called_once_with("test_umo")
+                    mock_complete.assert_awaited_once_with("test_umo")
 
     @pytest.mark.asyncio
     async def test_analyze_and_store_none(self, plugin):
-        """none 结果应清空缓冲区但不保存。"""
+        """none 结果不应保存，并应释放 in-flight 标记。"""
         from astrbot_plugin_bug_catcher.analyzer import AnalysisResult
         from astrbot_plugin_bug_catcher.chat_buffer import MessageRecord
 
@@ -196,14 +200,16 @@ class TestBugCatcherPluginIntegration:
             with patch.object(
                 plugin.bug_store, "add_bugs_from_analysis", new_callable=AsyncMock
             ) as mock_save:
-                with patch.object(plugin.buffer_mgr, "clear_buffer") as mock_clear:
+                with patch.object(
+                    plugin.buffer_mgr, "mark_analysis_complete", new_callable=AsyncMock
+                ) as mock_complete:
                     await plugin._analyze_and_store("test_umo", messages)
                     mock_save.assert_not_called()
-                    mock_clear.assert_called_once_with("test_umo")
+                    mock_complete.assert_awaited_once_with("test_umo")
 
     @pytest.mark.asyncio
     async def test_analyze_and_store_error(self, plugin):
-        """分析异常应清空缓冲区。"""
+        """分析异常应释放 in-flight 标记。"""
         from astrbot_plugin_bug_catcher.chat_buffer import MessageRecord
 
         messages = [
@@ -219,13 +225,15 @@ class TestBugCatcherPluginIntegration:
             plugin.analyzer, "analyze", new_callable=AsyncMock
         ) as mock_analyze:
             mock_analyze.side_effect = RuntimeError("LLM 失败")
-            with patch.object(plugin.buffer_mgr, "clear_buffer") as mock_clear:
+            with patch.object(
+                plugin.buffer_mgr, "mark_analysis_complete", new_callable=AsyncMock
+            ) as mock_complete:
                 await plugin._analyze_and_store("test_umo", messages)
-                mock_clear.assert_called_once_with("test_umo")
+                mock_complete.assert_awaited_once_with("test_umo")
 
     @pytest.mark.asyncio
     async def test_analyze_and_store_parse_error(self, plugin):
-        """JSON 解析失败应清空缓冲区。"""
+        """JSON 解析失败应释放 in-flight 标记。"""
         from astrbot_plugin_bug_catcher.analyzer import AnalysisResult
         from astrbot_plugin_bug_catcher.chat_buffer import MessageRecord
 
@@ -243,6 +251,55 @@ class TestBugCatcherPluginIntegration:
             plugin.analyzer, "analyze", new_callable=AsyncMock
         ) as mock_analyze:
             mock_analyze.return_value = result
-            with patch.object(plugin.buffer_mgr, "clear_buffer") as mock_clear:
+            with patch.object(
+                plugin.buffer_mgr, "mark_analysis_complete", new_callable=AsyncMock
+            ) as mock_complete:
                 await plugin._analyze_and_store("test_umo", messages)
-                mock_clear.assert_called_once_with("test_umo")
+                mock_complete.assert_awaited_once_with("test_umo")
+
+    @pytest.mark.asyncio
+    async def test_analyze_and_store_skips_save_after_terminate(self, plugin):
+        """插件停用后，已返回的分析结果不应继续写入存储。"""
+        from astrbot_plugin_bug_catcher.analyzer import AnalysisResult, BugItem
+        from astrbot_plugin_bug_catcher.chat_buffer import MessageRecord
+
+        result = AnalysisResult(
+            result="confirmed",
+            bugs=[BugItem(severity="high", summary="bug", analysis="x")],
+        )
+        messages = [
+            MessageRecord(
+                timestamp=1717450000.0,
+                sender_id="u1",
+                sender_name="用户",
+                content="报错了",
+            )
+        ]
+
+        async def analyze_and_deactivate(*args, **kwargs):
+            plugin._active = False
+            return result
+
+        with patch.object(
+            plugin.analyzer, "analyze", side_effect=analyze_and_deactivate
+        ):
+            with patch.object(
+                plugin.bug_store, "add_bugs_from_analysis", new_callable=AsyncMock
+            ) as mock_save:
+                await plugin._analyze_and_store("test_umo", messages)
+                mock_save.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_scan_due_buffers_schedules_analysis(self, plugin):
+        """主动扫描应为满足时间阈值的缓冲区创建分析任务。"""
+        from astrbot_plugin_bug_catcher.chat_buffer import AnalysisTrigger
+
+        plugin._active = True
+        trigger = AnalysisTrigger(triggered=True, reason="time_threshold", messages=[])
+        with patch.object(
+            plugin.buffer_mgr, "collect_due_triggers", new_callable=AsyncMock
+        ) as mock_collect:
+            mock_collect.return_value = [("test_umo", trigger)]
+            with patch.object(plugin, "_schedule_analysis") as mock_schedule:
+                await plugin._scan_due_buffers_once()
+                mock_schedule.assert_called_once_with("test_umo", trigger.messages)

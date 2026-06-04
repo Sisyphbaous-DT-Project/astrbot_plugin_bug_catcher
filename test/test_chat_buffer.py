@@ -53,6 +53,35 @@ class TestChatBufferManager:
         assert trigger.triggered is True
         assert trigger.reason == "batch_size"
         assert len(trigger.messages) == 10
+        assert mgr.get_buffer_size("test:GROUP_MESSAGE:1") == 0
+
+    @pytest.mark.asyncio
+    async def test_trigger_isolates_batch_from_new_messages(self, mgr):
+        """触发批次应和分析期间的新消息隔离，避免完成后误清。"""
+        umo = "test:GROUP_MESSAGE:1"
+        for i in range(10):
+            trigger = await mgr.add_message(
+                umo=umo,
+                sender_id=f"u{i}",
+                sender_name=f"用户{i}",
+                content=f"old {i}",
+            )
+
+        assert trigger.triggered is True
+        assert [m.content for m in trigger.messages] == [f"old {i}" for i in range(10)]
+        assert mgr.get_buffer_size(umo) == 0
+
+        new_trigger = await mgr.add_message(
+            umo=umo,
+            sender_id="u-new",
+            sender_name="新用户",
+            content="new message",
+        )
+        assert new_trigger.triggered is False
+        assert mgr.get_buffer_size(umo) == 1
+
+        await mgr.mark_analysis_complete(umo)
+        assert mgr.get_buffer_size(umo) == 1
 
     @pytest.mark.asyncio
     async def test_add_message_multiple_umo(self, mgr):
@@ -81,6 +110,7 @@ class TestChatBufferManager:
     @pytest.mark.asyncio
     async def test_fifo_eviction(self, mgr):
         """超过 max_history 时最旧消息应被淘汰。"""
+        mgr._in_flight.add("test")
         # max_history=20, 添加 25 条
         for i in range(25):
             await mgr.add_message(
@@ -108,8 +138,7 @@ class TestChatBufferManager:
             )
         assert trigger.triggered is True
 
-        # 清空缓冲区（模拟分析完成后的行为）
-        await mgr.clear_buffer("test")
+        await mgr.mark_analysis_complete("test")
 
         # 立即再添加 10 条（在冷却期内）
         for i in range(10, 20):
@@ -148,6 +177,40 @@ class TestChatBufferManager:
         )
         assert trigger.triggered is True
         assert trigger.reason == "time_threshold"
+
+    @pytest.mark.asyncio
+    async def test_collect_due_triggers_active_scan(self, mgr):
+        """主动扫描应取出超过时间阈值的低活跃缓冲区。"""
+        umo = "quiet_umo"
+        for i in range(3):
+            await mgr.add_message(
+                umo=umo,
+                sender_id="u1",
+                sender_name="用户",
+                content=f"msg {i}",
+            )
+        buf = mgr._buffers[umo]
+        buf[0] = buf[0].__class__(
+            timestamp=time.time() - 10 * 60,
+            sender_id=buf[0].sender_id,
+            sender_name=buf[0].sender_name,
+            content=buf[0].content,
+        )
+
+        triggers = await mgr.collect_due_triggers()
+
+        assert len(triggers) == 1
+        triggered_umo, trigger = triggers[0]
+        assert triggered_umo == umo
+        assert trigger.triggered is True
+        assert trigger.reason == "time_threshold"
+        assert len(trigger.messages) == 3
+        assert mgr.get_buffer_size(umo) == 0
+
+        # 分析未完成时不应为新消息触发重叠分析。
+        new_trigger = await mgr.add_message(umo, "u1", "用户", "new")
+        assert new_trigger.triggered is False
+        assert mgr.get_buffer_size(umo) == 1
 
     @pytest.mark.asyncio
     async def test_time_threshold_trigger_for_new_umo(self, mgr):

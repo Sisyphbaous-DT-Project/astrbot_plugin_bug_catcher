@@ -60,6 +60,8 @@ class ChatBufferManager:
         self._locks: Dict[str, asyncio.Lock] = {}
         # UMO -> 最后活动时间戳（用于 TTL 清理）
         self._last_active: Dict[str, float] = {}
+        # UMO 正在分析的批次。分析期间新消息继续进入 buffer，但不会触发重叠分析。
+        self._in_flight: set[str] = set()
 
         self._cleanup_task: Optional[asyncio.Task] = None
         self._shutdown = False
@@ -94,6 +96,8 @@ class ChatBufferManager:
             trigger = self._check_trigger(umo, now)
             if trigger.triggered:
                 self._last_analysis[umo] = now
+                self._in_flight.add(umo)
+                self._buffers.pop(umo, None)
             return trigger
 
     # ------------------------------------------------------------------
@@ -104,6 +108,9 @@ class ChatBufferManager:
         """检查是否满足分析触发条件。"""
         buf = self._buffers.get(umo)
         if not buf:
+            return AnalysisTrigger()
+
+        if umo in self._in_flight:
             return AnalysisTrigger()
 
         msgs = list(buf)
@@ -146,6 +153,24 @@ class ChatBufferManager:
 
         return AnalysisTrigger()
 
+    async def collect_due_triggers(self) -> list[tuple[str, AnalysisTrigger]]:
+        """主动扫描并取出已满足触发条件的缓冲区。"""
+        now = time.time()
+        triggers: list[tuple[str, AnalysisTrigger]] = []
+
+        for umo in list(self._buffers.keys()):
+            lock = self._get_lock(umo)
+            async with lock:
+                trigger = self._check_trigger(umo, now)
+                if not trigger.triggered:
+                    continue
+                self._last_analysis[umo] = now
+                self._in_flight.add(umo)
+                self._buffers.pop(umo, None)
+                triggers.append((umo, trigger))
+
+        return triggers
+
     # ------------------------------------------------------------------
     # 缓冲区操作
     # ------------------------------------------------------------------
@@ -164,6 +189,15 @@ class ChatBufferManager:
         else:
             self._buffers.pop(umo, None)
         logger.debug(f"[ChatBuffer] UMO={umo} 缓冲区已清空")
+
+    async def mark_analysis_complete(self, umo: str) -> None:
+        """标记指定 UMO 的当前分析批次已结束。"""
+        lock = self._locks.get(umo)
+        if lock:
+            async with lock:
+                self._in_flight.discard(umo)
+        else:
+            self._in_flight.discard(umo)
 
     def get_buffer_size(self, umo: str) -> int:
         """获取指定 UMO 的当前缓存消息数。"""
@@ -246,9 +280,11 @@ class ChatBufferManager:
                     self._buffers.pop(umo, None)
                     self._last_analysis.pop(umo, None)
                     self._last_active.pop(umo, None)
+                    self._in_flight.discard(umo)
                     self._locks.pop(umo, None)
             else:
                 self._buffers.pop(umo, None)
                 self._last_analysis.pop(umo, None)
                 self._last_active.pop(umo, None)
+                self._in_flight.discard(umo)
             logger.info(f"[ChatBuffer] UMO={umo} 缓冲区已过期清理")

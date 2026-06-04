@@ -117,16 +117,7 @@ class BugStore:
             except Exception as e:
                 logger.warning(f"[BugStore] 跳过损坏的记录: {e}")
 
-        self._stats = data.get("stats", self._stats)
-        if not isinstance(self._stats, dict):
-            self._stats = {
-                "total_confirmed": 0,
-                "total_suspected": 0,
-                "total_analyzed": 0,
-            }
-        # 确保旧版本 stats 包含所有必需字段
-        for key in ("total_confirmed", "total_suspected", "total_analyzed"):
-            self._stats.setdefault(key, 0)
+        self._stats = self._normalize_stats(data.get("stats", self._stats))
         logger.info(f"[BugStore] 已加载 {len(self._bugs)} 条记录")
 
     async def _save(self) -> None:
@@ -334,12 +325,16 @@ class BugStore:
             bug = self._bugs.get(bug_id)
             if not bug:
                 return False
+            previous_status = bug.status
             bug.status = status
             # 使用 is not None 判断，允许空字符串清空 note
             if note is not None:
                 bug.note = note
-            if status == "resolved":
+            if status == "resolved" and previous_status != "resolved":
                 bug.resolved_at = datetime.now(timezone.utc).isoformat()
+            else:
+                if status != "resolved":
+                    bug.resolved_at = None
             await self._save()
             logger.info(f"[BugStore] 更新状态: {bug_id} -> {status}")
             return True
@@ -371,7 +366,9 @@ class BugStore:
     async def get_stats(self) -> dict:
         """获取统计信息。"""
         async with self._lock:
-            return dict(self._stats)
+            stats = dict(self._stats)
+            stats["today_count"] = self._count_today_bugs()
+            return stats
 
     async def get_open_bugs(self, limit: int = 50) -> List[dict]:
         """获取 open 状态的 bug 列表（供 AI 去重参考）。"""
@@ -405,3 +402,39 @@ class BugStore:
         if len(parts) >= 3:
             return f"{parts[0]}: {parts[2]}"
         return umo
+
+    @staticmethod
+    def _normalize_stats(raw_stats: object) -> dict:
+        """规范化统计字段，避免历史/损坏数据导致计数运算崩溃。"""
+        defaults = {
+            "total_confirmed": 0,
+            "total_suspected": 0,
+            "total_analyzed": 0,
+        }
+        if not isinstance(raw_stats, dict):
+            return defaults
+
+        normalized = {}
+        for key, default in defaults.items():
+            try:
+                value = int(raw_stats.get(key, default))
+            except (TypeError, ValueError):
+                value = default
+            normalized[key] = max(0, value)
+        return normalized
+
+    def _count_today_bugs(self) -> int:
+        """统计 UTC 日期下今日新增记录数。"""
+        today = datetime.now(timezone.utc).date()
+        count = 0
+        for bug in self._bugs.values():
+            try:
+                created_at = bug.created_at.replace("Z", "+00:00")
+                created_date = (
+                    datetime.fromisoformat(created_at).astimezone(timezone.utc).date()
+                )
+            except (TypeError, ValueError):
+                continue
+            if created_date == today:
+                count += 1
+        return count

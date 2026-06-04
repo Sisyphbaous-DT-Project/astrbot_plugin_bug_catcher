@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 
 import pytest
 
@@ -115,6 +116,31 @@ class TestBugStore:
             json.dump({"version": 1, "bugs": "not_a_list", "stats": {}}, f)
         await store.load()
         assert len(store._bugs) == 0
+
+    @pytest.mark.asyncio
+    async def test_load_normalizes_corrupted_stats(self, store, temp_data_dir):
+        """损坏 stats 字段应在加载时规范化为安全整数。"""
+        os.makedirs(temp_data_dir / "plugin_bug_catcher", exist_ok=True)
+        with open(temp_data_dir / "plugin_bug_catcher" / "bugs.json", "w") as f:
+            json.dump(
+                {
+                    "version": 2,
+                    "bugs": [],
+                    "stats": {
+                        "total_confirmed": "2",
+                        "total_suspected": None,
+                        "total_analyzed": -5,
+                    },
+                },
+                f,
+            )
+
+        await store.load()
+
+        stats = await store.get_stats()
+        assert stats["total_confirmed"] == 2
+        assert stats["total_suspected"] == 0
+        assert stats["total_analyzed"] == 0
 
     # ------------------------------------------------------------------
     # CRUD
@@ -284,6 +310,43 @@ class TestBugStore:
         assert bug.resolved_at is not None
 
     @pytest.mark.asyncio
+    async def test_update_status_clears_resolved_at_when_reopened(
+        self, store, sample_analysis, sample_messages
+    ):
+        """离开 resolved 状态时应清空 resolved_at。"""
+        records = await store.add_bugs_from_analysis(
+            umo="test",
+            analysis_result=sample_analysis,
+            raw_messages=sample_messages,
+        )
+        bug_id = records[0].id
+
+        assert await store.update_bug_status(bug_id, "resolved") is True
+        assert (await store.get_bug_by_id(bug_id)).resolved_at is not None
+
+        assert await store.update_bug_status(bug_id, "open") is True
+        bug = await store.get_bug_by_id(bug_id)
+        assert bug.status == "open"
+        assert bug.resolved_at is None
+
+    @pytest.mark.asyncio
+    async def test_update_status_resolved_is_idempotent(
+        self, store, sample_analysis, sample_messages
+    ):
+        """重复设置 resolved 不应刷新首次解决时间。"""
+        records = await store.add_bugs_from_analysis(
+            umo="test",
+            analysis_result=sample_analysis,
+            raw_messages=sample_messages,
+        )
+        bug_id = records[0].id
+
+        assert await store.update_bug_status(bug_id, "resolved") is True
+        first_resolved_at = (await store.get_bug_by_id(bug_id)).resolved_at
+        assert await store.update_bug_status(bug_id, "resolved") is True
+        assert (await store.get_bug_by_id(bug_id)).resolved_at == first_resolved_at
+
+    @pytest.mark.asyncio
     async def test_update_status_invalid(self, store, sample_analysis, sample_messages):
         """无效状态应拒绝更新。"""
         records = await store.add_bugs_from_analysis(
@@ -329,6 +392,45 @@ class TestBugStore:
         stats = await store.get_stats()
         assert stats["total_confirmed"] == 2
         assert stats["total_analyzed"] == 1
+        assert "today_count" in stats
+
+    @pytest.mark.asyncio
+    async def test_get_stats_today_count(self, store):
+        """today_count 应按全量记录统计，不依赖分页。"""
+        from astrbot_plugin_bug_catcher.bug_store import BugRecord
+
+        now = datetime.now(timezone.utc).isoformat()
+        store._bugs = {
+            "today": BugRecord(
+                id="today",
+                umo="test",
+                umo_display="test",
+                platform="test",
+                created_at=now,
+                result="confirmed",
+                severity="high",
+                summary="today",
+                analysis="x",
+                related_messages=[],
+                raw_messages=[],
+            ),
+            "old": BugRecord(
+                id="old",
+                umo="test",
+                umo_display="test",
+                platform="test",
+                created_at="2020-01-01T00:00:00+00:00",
+                result="confirmed",
+                severity="high",
+                summary="old",
+                analysis="x",
+                related_messages=[],
+                raw_messages=[],
+            ),
+        }
+
+        stats = await store.get_stats()
+        assert stats["today_count"] == 1
 
     # ------------------------------------------------------------------
     # 并发安全
