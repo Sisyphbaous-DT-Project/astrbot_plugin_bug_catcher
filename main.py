@@ -128,7 +128,7 @@ class BugCatcherPlugin(Star):
             await self.buffer_mgr.clear_buffer(umo)
             return
 
-        log_level = logging.WARNING if result.result == "suspected" else logging.ERROR
+        log_level = logging.WARNING if result.result == "suspected" else logging.INFO
         for bug in result.bugs:
             logger.log(
                 log_level,

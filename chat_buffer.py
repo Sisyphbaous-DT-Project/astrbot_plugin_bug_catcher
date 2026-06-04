@@ -238,4 +238,3 @@ class ChatBufferManager:
                 self._last_analysis.pop(umo, None)
                 self._last_active.pop(umo, None)
             logger.info(f"[ChatBuffer] UMO={umo} 缓冲区已过期清理")
-            logger.info(f"[ChatBuffer] UMO={umo} 缓冲区已过期清理")

@@ -255,7 +255,7 @@ class BugAnalyzer:
 
         def _current_tok() -> int:
             return (
-                self._estimate_tokens("\n".join(header + bug_lines + msg_lines))
+                self._estimate_tokens("\n".join(header + msg_lines + bug_lines))
                 + system_tok
             )
 
