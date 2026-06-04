@@ -16,7 +16,7 @@
 - **Dual Threshold Trigger 双阈值触发**：消息数量达到 `batch_size` 或距离上次分析超过 `time_threshold_min` 分钟时自动触发分析
 - **Batch Isolation 批次隔离**：触发分析时原子取出当前批次，LLM 分析期间的新消息会留给下一轮，避免并发丢消息（v1.1.6）
 - **Multi-layer JSON Tolerance 多层 JSON 容错**：LLM 返回非标准 JSON 时自动尝试正则提取和格式修复，极大降低解析失败率
-- **Dashboard Panel Dashboard 面板**：WebUI 可视化展示 bug 列表，支持筛选、分页、详情、原始消息追溯、关键消息高亮、删除确认、Toast 反馈和重复点击保护
+- **Dashboard Panel Dashboard 面板**：WebUI 可视化展示 bug 列表，支持筛选、分页、详情、原始消息追溯、关键消息高亮、删除确认、Toast 反馈、重复点击保护和 AstrBot 同款视觉风格（v1.1.7）
 - **Atomic Persistence 原子持久化**：临时文件 + `os.replace()` 原子重命名，防止写入中断导致 JSON 损坏
 - **Concurrency Safe 并发安全**：每 UMO 独立 `asyncio.Lock`，分析任务互斥，TTL 清理加锁防竞态（v1.1.1）
 - **Sandbox Friendly 前端兼容**：Dashboard 不依赖浏览器原生 `confirm()` / `alert()`，适配 AstrBot iframe sandbox 环境（v1.1.4）
@@ -109,7 +109,7 @@ astrbot_plugin_bug_catcher/
 |-- analyzer.py          # AI 分析引擎（Prompt 构建、LLM 调用、JSON 容错、字段校验、图片清洗、去重）
 |-- bug_store.py         # Bug 持久化存储（CRUD、分页查询、report_history、原子 rename 写入）
 |-- dashboard_api.py     # Dashboard 后端 API（4 个 GET/POST 路由封装）
-|-- metadata.yaml        # 插件元数据（v1.1.6）
+|-- metadata.yaml        # 插件元数据（v1.1.7）
 |-- _conf_schema.json    # 配置项定义（7 项，含 _special: "select_provider"）
 |-- pytest.ini           # Pytest 配置
 |-- requirements-test.txt # 测试依赖
@@ -127,7 +127,7 @@ astrbot_plugin_bug_catcher/
 `-- pages/
     `-- dashboard/
         |-- index.html   # 页面骨架
-        |-- style.css    # 深色主题响应式样式
+        |-- style.css    # AstrBot 风格响应式样式
         `-- app.js       # Bridge SDK 通信 + 业务逻辑
 ```
 
