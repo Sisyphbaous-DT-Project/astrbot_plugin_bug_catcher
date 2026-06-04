@@ -2,6 +2,9 @@
  * Bug Catcher Dashboard 前端逻辑
  */
 
+// Bridge SDK（AstrBot 注入的全局对象）
+const bridge = window.AstrBotPluginPage;
+
 // 全局状态
 const state = {
   page: 1,
