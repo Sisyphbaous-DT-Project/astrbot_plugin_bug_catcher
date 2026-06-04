@@ -58,11 +58,6 @@ class AnalysisResult:
 class BugAnalyzer:
     """调用 LLM 分析聊天记录中的 bug 反馈。"""
 
-    # 估算：每个字符约 1.5 tokens（中文更密，混合取平均）
-    _TOKENS_PER_CHAR = 1.5
-    # 保守的最大 prompt tokens（给大多数模型留余量）
-    _MAX_PROMPT_TOKENS = 6000
-
     _SYSTEM_PROMPT = """\
 你是一个专业的开源项目 Bug 分析助手。你正在监控一个 AstrBot（一个开源聊天机器人框架）及其插件的开发者交流群。
 
@@ -134,7 +129,6 @@ class BugAnalyzer:
             return AnalysisResult(result="none")
 
         prompt = self._build_prompt(messages, umo, existing_bugs)
-        prompt = self._truncate_if_needed(prompt)
 
         try:
             response = await self._call_llm(prompt, umo)
@@ -204,7 +198,7 @@ class BugAnalyzer:
         content = _IMAGE_URL_RE.sub("[图片]", content)
         # 替换视频 URL
         content = _VIDEO_URL_RE.sub("[视频]", content)
-        # 将消息内部换行压缩为空格，防止 _truncate_if_needed 按行截断时格式错乱
+        # 将消息内部换行压缩为空格，保持 prompt 每行语义完整
         content = content.replace("\n", " ")
 
         stripped = content.strip()
@@ -228,55 +222,6 @@ class BugAnalyzer:
 
     # ------------------------------------------------------------------
     # Token 截断
-    # ------------------------------------------------------------------
-
-    def _estimate_tokens(self, text: str) -> int:
-        """粗略估算 token 数。"""
-        return int(len(text) * self._TOKENS_PER_CHAR)
-
-    def _truncate_if_needed(self, prompt: str) -> str:
-        """如果 prompt 过长，截断最早的消息，必要时也截断已有 bug 列表。"""
-        system_tok = self._estimate_tokens(self._SYSTEM_PROMPT)
-        prompt_tok = self._estimate_tokens(prompt)
-        total_tok = system_tok + prompt_tok
-
-        if total_tok <= self._MAX_PROMPT_TOKENS:
-            return prompt
-
-        logger.warning(f"[Analyzer] Prompt 过长（估算 {total_tok} tokens），开始截断")
-
-        lines = prompt.split("\n")
-        # 三类行：消息行 [N]、已有 bug 行 * N.、头部/尾部
-        header = [
-            line
-            for line in lines
-            if not line.startswith("[") and not line.startswith("* ")
-        ]
-        msg_lines = [line for line in lines if line.startswith("[")]
-        bug_lines = [line for line in lines if line.startswith("* ")]
-
-        def _current_tok() -> int:
-            return (
-                self._estimate_tokens("\n".join(header + msg_lines + bug_lines))
-                + system_tok
-            )
-
-        # 先截断最早的消息
-        while msg_lines and _current_tok() > self._MAX_PROMPT_TOKENS:
-            msg_lines.pop(0)
-
-        # 如果还不够，截断最早的已有 bug 记录
-        while bug_lines and _current_tok() > self._MAX_PROMPT_TOKENS:
-            bug_lines.pop(0)
-
-        truncated = "\n".join(header + msg_lines + bug_lines)
-        logger.info(
-            f"[Analyzer] 截断后剩余 {len(msg_lines)} 条消息 + "
-            f"{len(bug_lines)} 条参考 bug，"
-            f"估算 tokens: {self._estimate_tokens(truncated) + system_tok}"
-        )
-        return truncated
-
     # ------------------------------------------------------------------
     # LLM 调用
     # ------------------------------------------------------------------

@@ -45,36 +45,6 @@ class TestBugAnalyzer:
         assert "安装插件后报错了" in prompt
 
     # ------------------------------------------------------------------
-    # Token 截断
-    # ------------------------------------------------------------------
-
-    def test_truncate_not_needed(self, analyzer, sample_messages):
-        """短 Prompt 不应被截断。"""
-        prompt = analyzer._build_prompt(sample_messages, "qq:group:12345")
-        result = analyzer._truncate_if_needed(prompt)
-        assert result == prompt
-
-    def test_truncate_removes_oldest(self, analyzer):
-        """超长 Prompt 应截断最早的消息。"""
-        from astrbot_plugin_bug_catcher.chat_buffer import MessageRecord
-
-        # 创建大量消息使 Prompt 超长
-        messages = [
-            MessageRecord(
-                timestamp=1717450000.0 + i,
-                sender_id="u1",
-                sender_name="用户",
-                content="A" * 500,  # 长消息加速超限
-            )
-            for i in range(200)
-        ]
-        prompt = analyzer._build_prompt(messages, "qq:group:12345")
-        truncated = analyzer._truncate_if_needed(prompt)
-        assert len(truncated) < len(prompt)
-        # 尾部指令应保留
-        assert "输出 JSON 结果" in truncated
-
-    # ------------------------------------------------------------------
     # JSON 解析
     # ------------------------------------------------------------------
 
