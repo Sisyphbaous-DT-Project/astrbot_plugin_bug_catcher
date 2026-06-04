@@ -108,6 +108,28 @@ class TestBugCatcherPluginIntegration:
                 mock_add.assert_awaited_once()
                 mock_analyze.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_on_group_message_handles_none_fields(self, plugin, mock_event):
+        """事件字段为 None 时应转为空字符串/未知，不应在日志切片或入队时崩溃。"""
+        plugin.config["global_mode"] = True
+        mock_event.get_sender_id.return_value = None
+        mock_event.get_sender_name.return_value = None
+        mock_event.get_message_outline.return_value = None
+
+        with patch.object(
+            plugin.buffer_mgr, "add_message", new_callable=AsyncMock
+        ) as mock_add:
+            from astrbot_plugin_bug_catcher.chat_buffer import AnalysisTrigger
+
+            mock_add.return_value = AnalysisTrigger(triggered=False)
+            await plugin.on_group_message(mock_event)
+            mock_add.assert_awaited_once_with(
+                umo=mock_event.unified_msg_origin,
+                sender_id="",
+                sender_name="未知",
+                content="",
+            )
+
     # ------------------------------------------------------------------
     # 分析与保存流程
     # ------------------------------------------------------------------

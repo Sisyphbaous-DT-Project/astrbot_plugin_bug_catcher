@@ -1,6 +1,6 @@
 name: astrbot_plugin_bug_catcher
 desc: 自动监听群聊消息，利用 AI 识别 bug 反馈并记录到 Dashboard 供开发者查看
-version: v1.1.4
+version: v1.1.5
 author: AI Assistant
 repo: https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_bug_catcher
 astrbot_version: ">=4.5.7"

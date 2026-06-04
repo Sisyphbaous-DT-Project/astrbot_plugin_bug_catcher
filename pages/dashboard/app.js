@@ -169,10 +169,11 @@ function renderBugs() {
   }
 
   listEl.innerHTML = state.bugs.map(bug => {
-    const reportCount = (bug.report_history || []).length;
+    const reportHistory = Array.isArray(bug.report_history) ? bug.report_history : [];
+    const reportCount = reportHistory.length;
     const reportBadge = reportCount > 1 ? `<span class="report-count">+${reportCount - 1}</span>` : '';
-    const firstReporter = (bug.report_history && bug.report_history[0])
-      ? bug.report_history[0].reporter_name : '未知';
+    const firstReporter = reportHistory[0]
+      ? reportHistory[0].reporter_name : '未知';
     const safeId = escapeHtml(bug.id);
     const isPending = state.pending.has(safeId);
 
@@ -241,7 +242,9 @@ async function showDetail(id) {
   if (!bug) return;
 
   const pmi = bug.primary_message_index;
-  const rawMsgs = (bug.raw_messages || []).map((m, idx) => {
+  const rawMessages = Array.isArray(bug.raw_messages) ? bug.raw_messages : [];
+  const rawMsgs = rawMessages.map((raw, idx) => {
+    const m = raw || {};
     const isPrimary = idx === pmi;
     return `
     <div class="msg-line${isPrimary ? ' msg-primary' : ''}">
@@ -254,15 +257,17 @@ async function showDetail(id) {
   }).join('');
 
   // 汇报历史
-  const reportHistory = (bug.report_history || []);
+  const reportHistory = Array.isArray(bug.report_history) ? bug.report_history : [];
   const reportHistoryHtml = reportHistory.length > 0
-    ? reportHistory.map(r => `
+    ? reportHistory.map(raw => {
+      const r = raw || {};
+      return `
       <div class="report-entry">
         <span class="report-time">${formatTime(r.reported_at)}</span>
         <span class="report-who">${escapeHtml(r.reporter_name || '未知')}</span>
         <span class="report-where">${escapeHtml(r.umo_display || r.umo || '')}</span>
       </div>
-    `).join('')
+    `}).join('')
     : '<div style="color:var(--text-muted)">无汇报历史</div>';
 
   // 首次报告者信息

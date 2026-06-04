@@ -31,6 +31,37 @@ _VIDEO_URL_RE = re.compile(
 )
 # 用于判断清洗后是否只剩占位符
 _EMPTY_AFTER_SANITIZE_RE = re.compile(r"^(\[(?:图片|视频)\]\s*)+$")
+_LINE_BREAK_RE = re.compile(r"[\r\n]+")
+
+
+def _as_text(value: Any, default: str = "") -> str:
+    """将模型/事件传入的任意值安全转为字符串。"""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _one_line_text(value: Any, default: str = "") -> str:
+    """转为单行文本，避免 Prompt/列表展示被换行注入破坏结构。"""
+    return _LINE_BREAK_RE.sub(" ", _as_text(value, default)).strip()
+
+
+def _multiline_text(value: Any, default: str = "") -> str:
+    """转为多行文本，仅规范 CRLF/CR，保留分析内容中的换行。"""
+    return _as_text(value, default).replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _bool_value(value: Any) -> bool:
+    """解析模型返回的布尔字段，避免字符串 'false' 被 bool() 误判为 True。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return False
 
 
 @dataclass
@@ -165,6 +196,9 @@ primary_message_index 规则（重要）：
         if result.result != "none" and result.bugs:
             msg_count = len(messages)
             for bug in result.bugs:
+                bug.related_messages = [
+                    idx for idx in bug.related_messages if 0 <= idx < msg_count
+                ]
                 # bool 是 int 的子类，需要显式排除
                 if not isinstance(bug.primary_message_index, int) or isinstance(
                     bug.primary_message_index, bool
@@ -204,7 +238,7 @@ primary_message_index 规则（重要）：
             time_str = time.strftime("%H:%M:%S", time.localtime(msg.timestamp))
             content = self._sanitize_content(msg.content)
             # 昵称可能包含换行符，不做处理会导致 Prompt 格式错乱（注入风险）
-            sender_name = msg.sender_name.replace("\n", " ")
+            sender_name = _one_line_text(msg.sender_name, "未知")
             lines.append(f"[{idx}] {time_str} {sender_name}: {content}")
 
         # 已有 bug 列表（用于去重），动态限制数量避免参考列表过长干扰分析
@@ -214,12 +248,14 @@ primary_message_index 规则（重要）：
             lines.append("")
             lines.append("已记录的 bug 列表（供参考，避免重复记录）：")
             for i, bug in enumerate(existing_slice, 1):
-                status_str = f"[{bug.get('status', 'open')}]"
+                status_str = f"[{_one_line_text(bug.get('status', 'open'), 'open')}]"
                 # summary 可能包含换行符，替换避免破坏 Prompt 格式
-                summary = str(bug.get("summary", "") or "").replace("\n", " ")
+                summary = _one_line_text(bug.get("summary", "") or "")
+                severity = _one_line_text(bug.get("severity", "?"), "?")
+                bug_id = _one_line_text(bug.get("id", "?"), "?")
                 lines.append(
-                    f"* {i}. [{bug.get('severity', '?')}] {summary} "
-                    f"{status_str} (ID: {bug.get('id', '?')})"
+                    f"* {i}. [{severity}] {summary} "
+                    f"{status_str} (ID: {bug_id})"
                 )
             lines.append("")
 
@@ -231,8 +267,9 @@ primary_message_index 规则（重要）：
         return "\n".join(lines)
 
     @staticmethod
-    def _sanitize_content(content: str) -> str:
+    def _sanitize_content(content: Any) -> str:
         """清洗消息内容中的图片/视频等多媒体信息，避免多模态模型报错或占用 token。"""
+        content = _as_text(content)
         if not content:
             return "[空消息]"
 
@@ -241,7 +278,7 @@ primary_message_index 规则（重要）：
         # 替换视频 URL
         content = _VIDEO_URL_RE.sub("[视频]", content)
         # 将消息内部换行压缩为空格，保持 prompt 每行语义完整
-        content = content.replace("\n", " ")
+        content = _LINE_BREAK_RE.sub(" ", content)
 
         stripped = content.strip()
         # 如果清洗后只剩占位符（任意数量），保留
@@ -259,9 +296,9 @@ primary_message_index 规则（重要）：
         """将 UMO 格式化为可读群信息。"""
         parts = umo.split(":", 2)
         if len(parts) >= 3:
-            session_id = parts[2].replace("\n", " ")
+            session_id = _one_line_text(parts[2])
             return f"平台={parts[0]}, 群/会话 ID={session_id}"
-        return umo.replace("\n", " ")
+        return _one_line_text(umo)
 
     # ------------------------------------------------------------------
     # LLM 调用
@@ -356,11 +393,15 @@ primary_message_index 规则（重要）：
         text = re.sub(r",(\s*[}\]])", r"\1", text)
         return text.strip()
 
-    def _extract_result(self, data: dict, raw: str) -> AnalysisResult:
+    def _extract_result(self, data: Any, raw: str) -> AnalysisResult:
         """从解析后的 dict 中提取结构化结果。"""
         result = AnalysisResult(raw_response=raw)
 
-        result_str = data.get("result", "none")
+        if not isinstance(data, dict):
+            result.error = "top-level JSON is not an object"
+            return result
+
+        result_str = _one_line_text(data.get("result", "none"), "none").lower()
         if result_str not in ("none", "suspected", "confirmed"):
             result.error = f"invalid result value: {result_str}"
             return result
@@ -396,7 +437,7 @@ primary_message_index 规则（重要）：
                 # 过滤掉 bool 和无法转为 int 的元素
                 cleaned = []
                 for v in raw_rel:
-                    if isinstance(v, bool):
+                    if isinstance(v, bool) or isinstance(v, float):
                         continue
                     try:
                         cleaned.append(int(v))
@@ -406,11 +447,13 @@ primary_message_index 规则（重要）：
 
             bug = BugItem(
                 severity=self._validate_severity(bug_data.get("severity", "medium")),
-                summary=bug_data.get("summary", "") or "",
-                analysis=bug_data.get("analysis", "") or "",
+                summary=_one_line_text(bug_data.get("summary", "") or ""),
+                analysis=_multiline_text(bug_data.get("analysis", "") or ""),
                 related_messages=raw_rel,
-                is_duplicate=bool(bug_data.get("is_duplicate", False)),
-                duplicate_of_id=str(bug_data.get("duplicate_of_id", "") or ""),
+                is_duplicate=_bool_value(bug_data.get("is_duplicate", False)),
+                duplicate_of_id=_one_line_text(
+                    bug_data.get("duplicate_of_id", "") or ""
+                ),
                 primary_message_index=pmi,
             )
             result.bugs.append(bug)

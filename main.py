@@ -68,9 +68,12 @@ class BugCatcherPlugin(Star):
                 return
 
             # 提取消息信息
-            sender_id = event.get_sender_id()
-            sender_name = event.get_sender_name()
-            content = event.get_message_outline()
+            sender_id_raw = event.get_sender_id()
+            sender_name_raw = event.get_sender_name()
+            content_raw = event.get_message_outline()
+            sender_id = "" if sender_id_raw is None else str(sender_id_raw)
+            sender_name = "未知" if sender_name_raw is None else str(sender_name_raw)
+            content = "" if content_raw is None else str(content_raw)
 
             logger.debug(
                 f"[BugCatcher] 收到群聊消息 from {sender_name}({sender_id}): "
