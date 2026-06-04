@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bug Catcher Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <!-- 标题 -->
+    <header class="header">
+      <h1>Bug Catcher</h1>
+      <p class="subtitle">AstrBot 开发者群聊 Bug 自动捕获面板</p>
+    </header>
+
+    <!-- 统计卡片 -->
+    <section class="stats-row" id="statsRow">
+      <div class="stat-card">
+        <div class="stat-value" id="statConfirmed">-</div>
+        <div class="stat-label">总确认</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statSuspected">-</div>
+        <div class="stat-label">总疑似</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statToday">-</div>
+        <div class="stat-label">今日新增</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statTotal">-</div>
+        <div class="stat-label">记录总数</div>
+      </div>
+    </section>
+
+    <!-- 筛选栏 -->
+    <section class="filter-bar">
+      <div class="filter-group">
+        <label>严重程度</label>
+        <select id="filterSeverity">
+          <option value="">全部</option>
+          <option value="critical">严重</option>
+          <option value="high">高</option>
+          <option value="medium">中</option>
+          <option value="low">低</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>状态</label>
+        <select id="filterStatus">
+          <option value="">全部</option>
+          <option value="open">待处理</option>
+          <option value="resolved">已解决</option>
+          <option value="ignored">已忽略</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>结果</label>
+        <select id="filterResult">
+          <option value="">全部</option>
+          <option value="confirmed">已确认</option>
+          <option value="suspected">疑似</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btnRefresh">刷新</button>
+    </section>
+
+    <!-- Bug 列表 -->
+    <section class="bug-list" id="bugList">
+      <div class="loading">加载中...</div>
+    </section>
+
+    <!-- 分页 -->
+    <section class="pagination" id="pagination"></section>
+  </div>
+
+  <!-- 详情弹窗 -->
+  <div class="modal" id="detailModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Bug 详情</h2>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

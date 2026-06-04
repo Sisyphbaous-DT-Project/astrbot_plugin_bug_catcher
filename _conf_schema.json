@@ -1,0 +1,44 @@
+{
+  "global_mode": {
+    "description": "全局模式：开启后监听所有群聊，不限制白名单",
+    "type": "bool",
+    "hint": "关闭时只在白名单中的群聊中监听",
+    "default": false
+  },
+  "umo_whitelist": {
+    "description": "白名单 UMO 列表（全局模式关闭时生效）",
+    "type": "list",
+    "hint": "格式：platform:type:session_id，如 aiocqhttp:GROUP_MESSAGE:123456789",
+    "default": []
+  },
+  "batch_size": {
+    "description": "每轮收集的消息数，达到此数量触发 AI 分析",
+    "type": "int",
+    "hint": "建议 100-500 之间，过小会增加 LLM 调用频率，过大可能遗漏 bug",
+    "default": 200
+  },
+  "max_history": {
+    "description": "单个群聊的最大消息缓存数",
+    "type": "int",
+    "hint": "超过此数量将淘汰最旧的消息（FIFO）",
+    "default": 300
+  },
+  "time_threshold_min": {
+    "description": "时间阈值（分钟）：低活跃群聊超过此时间未分析则强制触发",
+    "type": "int",
+    "hint": "防止低活跃群聊永远不触发分析，建议 30-120 分钟",
+    "default": 30
+  },
+  "analysis_interval_min": {
+    "description": "同一群聊的分析冷却时间（分钟）",
+    "type": "int",
+    "hint": "防止频繁调用 LLM，建议 3-10 分钟",
+    "default": 5
+  },
+  "provider_id": {
+    "description": "用于 Bug 分析的 LLM 提供商",
+    "type": "string",
+    "_special": "select_provider",
+    "hint": "留空则使用当前默认模型"
+  }
+}
