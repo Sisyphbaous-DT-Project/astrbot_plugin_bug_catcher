@@ -205,10 +205,27 @@ body {
   margin-bottom: 6px;
   line-height: 1.4;
 }
-.bug-umo {
+.bug-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
   font-size: 12px;
   color: var(--text-muted);
-  margin-bottom: 12px;
+}
+.meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.report-count {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--primary);
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: 4px;
 }
 .bug-actions {
   display: flex;
@@ -335,6 +352,27 @@ body {
 .msg-line:last-child { border-bottom: none; }
 .msg-time { color: var(--text-muted); margin-right: 8px; }
 .msg-sender { color: var(--primary); font-weight: 500; margin-right: 8px; }
+
+/* 汇报历史 */
+.report-history {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 12px;
+  font-size: 13px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.report-entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.report-entry:last-child { border-bottom: none; }
+.report-time { color: var(--text-muted); }
+.report-who { color: var(--primary); font-weight: 500; }
+.report-where { color: var(--text-muted); }
 
 /* 空状态 */
 .empty-state {

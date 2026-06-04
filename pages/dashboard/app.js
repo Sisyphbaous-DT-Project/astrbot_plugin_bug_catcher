@@ -145,26 +145,38 @@ function renderBugs() {
     return;
   }
 
-  listEl.innerHTML = state.bugs.map(bug => `
-    <div class="bug-card" data-id="${bug.id}">
+  listEl.innerHTML = state.bugs.map(bug => {
+    const reportCount = (bug.report_history || []).length;
+    const reportBadge = reportCount > 1 ? `<span class="report-count">+${reportCount - 1}</span>` : '';
+    const firstReporter = (bug.report_history && bug.report_history[0])
+      ? bug.report_history[0].reporter_name : '未知';
+    const safeId = escapeHtml(bug.id);
+
+    return `
+    <div class="bug-card" data-id="${safeId}">
       <div class="bug-card-header">
-        <span class="bug-severity severity-${bug.severity}">${bug.severity}</span>
-        <span class="bug-result result-${bug.result}">${bug.result}</span>
-        <span class="bug-status status-${bug.status}">${bug.status}</span>
+        <span class="bug-severity severity-${escapeHtml(bug.severity)}">${escapeHtml(bug.severity)}</span>
+        <span class="bug-result result-${escapeHtml(bug.result)}">${escapeHtml(bug.result)}</span>
+        <span class="bug-status status-${escapeHtml(bug.status)}">${escapeHtml(bug.status)}</span>
+        ${reportBadge}
         <span class="bug-time">${formatTime(bug.created_at)}</span>
       </div>
       <div class="bug-summary">${escapeHtml(bug.summary)}</div>
-      <div class="bug-umo">${escapeHtml(bug.umo_display || bug.umo)}</div>
+      <div class="bug-meta">
+        <span class="meta-item">📍 ${escapeHtml(bug.umo_display || bug.umo)}</span>
+        <span class="meta-item">👤 ${escapeHtml(firstReporter)}</span>
+        <span class="meta-item">📝 ${formatTime(bug.created_at)}</span>
+      </div>
       <div class="bug-actions">
-        <button class="btn btn-primary btn-small" onclick="showDetail('${bug.id}')">详情</button>
+        <button class="btn btn-primary btn-small" onclick="showDetail('${safeId}')">详情</button>
         ${bug.status === 'open' ? `
-          <button class="btn btn-success btn-small" onclick="resolveBug('${bug.id}')">标记已解决</button>
-          <button class="btn btn-success btn-small" onclick="ignoreBug('${bug.id}')">忽略</button>
+          <button class="btn btn-success btn-small" onclick="resolveBug('${safeId}')">标记已解决</button>
+          <button class="btn btn-success btn-small" onclick="ignoreBug('${safeId}')">忽略</button>
         ` : ''}
-        <button class="btn btn-danger btn-small" onclick="deleteBug('${bug.id}')">删除</button>
+        <button class="btn btn-danger btn-small" onclick="deleteBug('${safeId}')">删除</button>
       </div>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 function renderPagination() {
@@ -212,6 +224,24 @@ async function showDetail(id) {
     </div>
   `).join('');
 
+  // 汇报历史
+  const reportHistory = (bug.report_history || []);
+  const reportHistoryHtml = reportHistory.length > 0
+    ? reportHistory.map(r => `
+      <div class="report-entry">
+        <span class="report-time">${formatTime(r.reported_at)}</span>
+        <span class="report-who">${escapeHtml(r.reporter_name || '未知')}</span>
+        <span class="report-where">${escapeHtml(r.umo_display || r.umo || '')}</span>
+      </div>
+    `).join('')
+    : '<div style="color:var(--text-muted)">无汇报历史</div>';
+
+  // 首次报告者信息
+  const firstReport = reportHistory[0] || {};
+  const reporterInfo = firstReport.reporter_name
+    ? `${escapeHtml(firstReport.reporter_name)} (${escapeHtml(firstReport.reporter_id || '')})`
+    : '未知';
+
   document.getElementById('modalBody').innerHTML = `
     <div class="detail-section">
       <h3>摘要</h3>
@@ -222,11 +252,20 @@ async function showDetail(id) {
       <div class="detail-text">${escapeHtml(bug.analysis)}</div>
     </div>
     <div class="detail-section">
-      <h3>来源</h3>
+      <h3>来源信息</h3>
       <div class="detail-text">
 平台: ${escapeHtml(bug.platform || '-')}
-UMO: ${escapeHtml(bug.umo)}
-时间: ${escapeHtml(bug.created_at)}
+群聊: ${escapeHtml(bug.umo_display || bug.umo || '-')}
+首次发现: ${formatTime(bug.created_at)}
+首次报告者: ${reporterInfo}
+状态: ${escapeHtml(bug.status)}
+${bug.note ? '备注: ' + escapeHtml(bug.note) : ''}
+      </div>
+    </div>
+    <div class="detail-section">
+      <h3>汇报历史 (${reportHistory.length} 次)</h3>
+      <div class="report-history">
+        ${reportHistoryHtml}
       </div>
     </div>
     <div class="detail-section">

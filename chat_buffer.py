@@ -41,6 +41,13 @@ class ChatBufferManager:
         # 防御性校验：确保关键配置值在合理范围内
         self.batch_size = max(1, config.get("batch_size", 200))
         self.max_history = max(10, config.get("max_history", 300))
+        # 确保 batch_size 不超过 max_history，否则永远触发不了
+        if self.batch_size > self.max_history:
+            logger.warning(
+                f"[ChatBuffer] batch_size({self.batch_size}) > max_history({self.max_history})，"
+                f"自动将 batch_size 调整为 {self.max_history}"
+            )
+            self.batch_size = self.max_history
         self.time_threshold_min = max(1, config.get("time_threshold_min", 30))
         self.analysis_interval_min = max(0, config.get("analysis_interval_min", 5))
         self.buffer_ttl_sec = 24 * 3600  # 24 小时未活跃则清理

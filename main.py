@@ -4,7 +4,6 @@ AstrBot Bug Catcher Plugin
 自动监听群聊消息，利用 AI 识别 bug 反馈并记录到 Dashboard。
 """
 
-import logging
 from astrbot.api.star import Context, Star
 from astrbot.api import logger
 from astrbot.api.event.filter import event_message_type, EventMessageType
@@ -58,48 +57,60 @@ class BugCatcherPlugin(Star):
     @event_message_type(EventMessageType.GROUP_MESSAGE, priority=0)
     async def on_group_message(self, event: AstrMessageEvent):
         """监听群聊消息，过滤后入队，满足条件时触发分析。"""
-        umo = event.unified_msg_origin
+        try:
+            umo = event.unified_msg_origin
 
-        # 白名单 / 全局开关检查
-        if not self._should_process(umo):
-            return
+            # 白名单 / 全局开关检查
+            if not self._should_process(umo):
+                return
 
-        # 提取消息信息
-        sender_id = event.get_sender_id()
-        sender_name = event.get_sender_name()
-        content = event.get_message_outline()
+            # 提取消息信息
+            sender_id = event.get_sender_id()
+            sender_name = event.get_sender_name()
+            content = event.get_message_outline()
 
-        logger.debug(
-            f"[BugCatcher] 收到群聊消息 from {sender_name}({sender_id}): "
-            f"{content[:80]}{'...' if len(content) > 80 else ''}"
-        )
-
-        # 消息入队并检查触发条件
-        trigger = await self.buffer_mgr.add_message(
-            umo=umo,
-            sender_id=sender_id,
-            sender_name=sender_name,
-            content=content,
-        )
-
-        if trigger.triggered:
-            logger.info(
-                f"[BugCatcher] UMO={umo} 触发分析，"
-                f"原因: {trigger.reason}, 消息数: {len(trigger.messages)}"
+            logger.debug(
+                f"[BugCatcher] 收到群聊消息 from {sender_name}({sender_id}): "
+                f"{content[:80]}{'...' if len(content) > 80 else ''}"
             )
-            # Phase 3: 调用分析引擎
-            await self._analyze_and_store(umo, trigger.messages)
+
+            # 消息入队并检查触发条件
+            trigger = await self.buffer_mgr.add_message(
+                umo=umo,
+                sender_id=sender_id,
+                sender_name=sender_name,
+                content=content,
+            )
+
+            if trigger.triggered:
+                logger.info(
+                    f"[BugCatcher] UMO={umo} 触发分析，"
+                    f"原因: {trigger.reason}, 消息数: {len(trigger.messages)}"
+                )
+                await self._analyze_and_store(umo, trigger.messages)
+        except Exception as e:
+            # 顶层保护：任何异常都不应阻断事件传播
+            logger.error(f"[BugCatcher] 处理群聊消息异常: {e}", exc_info=True)
 
     # ------------------------------------------------------------------
-    # 分析引擎入口（Phase 3 实现）
+    # 分析引擎入口
     # ------------------------------------------------------------------
 
     async def _analyze_and_store(self, umo: str, messages: list) -> None:
         """调用 AI 分析并保存结果。"""
         logger.info(f"[BugCatcher] 开始分析 UMO={umo}，消息数: {len(messages)}")
 
+        # 获取已有 bug 列表（open 状态），供 AI 去重参考
         try:
-            result: AnalysisResult = await self.analyzer.analyze(messages, umo)
+            existing_bugs = await self.bug_store.get_open_bugs(limit=30)
+        except Exception as e:
+            logger.warning(f"[BugCatcher] 获取已有 bug 列表失败: {e}")
+            existing_bugs = []
+
+        try:
+            result: AnalysisResult = await self.analyzer.analyze(
+                messages, umo, existing_bugs=existing_bugs
+            )
         except Exception as e:
             logger.error(f"[BugCatcher] 分析异常: {e}", exc_info=True)
             self.buffer_mgr.clear_buffer(umo)
@@ -115,7 +126,11 @@ class BugCatcherPlugin(Star):
             self.buffer_mgr.clear_buffer(umo)
             return
 
-        log_level = logging.WARNING if result.result == "suspected" else logging.ERROR
+        log_level = (
+            __import__("logging").WARNING
+            if result.result == "suspected"
+            else __import__("logging").ERROR
+        )
         for bug in result.bugs:
             logger.log(
                 log_level,
@@ -128,14 +143,23 @@ class BugCatcherPlugin(Star):
         # 保存到 BugStore
         try:
             platform = umo.split(":", 1)[0] if ":" in umo else ""
+            # 尝试获取主报告者信息（取相关消息中的第一个发送者）
+            reporter_name = ""
+            reporter_id = ""
+            if messages:
+                reporter_name = messages[0].sender_name
+                reporter_id = messages[0].sender_id
+
             records = await self.bug_store.add_bugs_from_analysis(
                 umo=umo,
                 analysis_result=result,
                 raw_messages=messages,
                 platform=platform,
+                reporter_name=reporter_name,
+                reporter_id=reporter_id,
             )
             logger.info(f"[BugCatcher] 已保存 {len(records)} 条记录到 BugStore")
         except Exception as e:
-            logger.error(f"[BugCatcher] 保存 bug 记录失败: {e}")
+            logger.error(f"[BugCatcher] 保存 bug 记录失败: {e}", exc_info=True)
 
         self.buffer_mgr.clear_buffer(umo)

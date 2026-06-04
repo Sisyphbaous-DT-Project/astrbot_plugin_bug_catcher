@@ -2,6 +2,7 @@
 AI 分析引擎。
 
 调用 LLM 分析聊天记录，识别 bug 反馈，解析 JSON 输出。
+支持：图片/视频清洗、已有 bug 去重、群信息溯源。
 """
 
 from __future__ import annotations
@@ -10,12 +11,24 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, List
+from typing import Any, Dict, List
 
 from astrbot.api import logger
 from astrbot.api.star import Context
 
 from .chat_buffer import MessageRecord
+
+
+# 图片 URL 正则（含常见扩展名和查询参数）
+_IMAGE_URL_RE = re.compile(
+    r"https?://[^\s<>\"{}|\\^`\[\]]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg)(?:\?[^\s]*)?",
+    re.IGNORECASE,
+)
+# 视频 URL 正则
+_VIDEO_URL_RE = re.compile(
+    r"https?://[^\s<>\"{}|\\^`\[\]]+\.(?:mp4|avi|mov|webm|flv|mkv)(?:\?[^\s]*)?",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -26,6 +39,8 @@ class BugItem:
     summary: str = ""
     analysis: str = ""
     related_messages: List[int] = field(default_factory=list)
+    is_duplicate: bool = False
+    duplicate_of_id: str = ""
 
 
 @dataclass
@@ -59,8 +74,10 @@ class BugAnalyzer:
         {
             "severity": "low" | "medium" | "high" | "critical",
             "summary": "用一句话简要描述这个 bug",
-            "analysis": "详细分析为什么判断这是 bug，基于哪些聊天记录得出此结论",
-            "related_messages": [0, 1, 2]
+            "analysis": "详细分析为什么判断这是 bug，基于哪些聊天记录得出此结论。如果是重复 bug，请说明首次发现时间和之前的记录 ID。",
+            "related_messages": [0, 1, 2],
+            "is_duplicate": false,
+            "duplicate_of_id": ""
         }
     ]
 }
@@ -76,14 +93,18 @@ class BugAnalyzer:
 - "medium"：部分功能异常，有 workaround
 - "low"：UI 显示问题、轻微的异常行为、文档错误
 
-如果 result 为 "none"，bugs 数组必须为空 []。
-如果 result 为 "suspected" 或 "confirmed"，bugs 数组必须至少包含一个 bug 对象。
+去重规则（重要）：
+- 如果发现的 bug 和"已记录的 bug 列表"中的某条在问题本质、影响范围、报错信息上高度相似，请设置 is_duplicate=true
+- duplicate_of_id 填写已记录 bug 列表中对应记录的 id（注意：id 就是列表中每行末尾括号里的 ID）
+- 如果是重复 bug，summary 保持简洁，analysis 中说明"该 bug 与记录 ID:xxx 相同，首次发现于 xxx"
+- 不要仅仅因为同一现象被多人提到就判定为重复——只有本质相同的 bug 才是重复
 
 注意：
 - 不要对用户的正常技术讨论、功能请求、使用问题误判为 bug
 - "我想要某个功能"属于功能请求，不是 bug
 - "这个怎么用"属于使用问题，不是 bug
 - "报错：xxx" "报错信息：xxx" 才是 bug 报告
+- 注意区分"用户报告了 bug"和"bug 被确认了"——confirmed 需要有明确的错误证据
 """
 
     def __init__(self, context: Context, config: dict):
@@ -98,12 +119,13 @@ class BugAnalyzer:
         self,
         messages: List[MessageRecord],
         umo: str,
+        existing_bugs: List[Dict[str, Any]] | None = None,
     ) -> AnalysisResult:
         """分析消息列表，返回结构化结果。"""
         if not messages:
             return AnalysisResult(result="none")
 
-        prompt = self._build_prompt(messages)
+        prompt = self._build_prompt(messages, umo, existing_bugs)
         prompt = self._truncate_if_needed(prompt)
 
         try:
@@ -123,19 +145,75 @@ class BugAnalyzer:
     # Prompt 构建
     # ------------------------------------------------------------------
 
-    def _build_prompt(self, messages: List[MessageRecord]) -> str:
-        """构建 User Prompt。"""
+    def _build_prompt(
+        self,
+        messages: List[MessageRecord],
+        umo: str,
+        existing_bugs: List[Dict[str, Any]] | None = None,
+    ) -> str:
+        """构建 User Prompt，包含群信息、消息记录、已有 bug 列表。"""
+        # 群信息展示
+        group_display = self._format_umo(umo)
         lines = [
-            f"以下是近期 {len(messages)} 条群聊记录（按时间顺序），"
-            f'每条记录格式为 "[索引] 时间 发送者: 内容"：\n'
+            f"群聊信息：{group_display}",
+            f"消息数量：{len(messages)} 条（按时间顺序）",
+            "每条记录格式：[索引] 时间 发送者: 内容",
+            "",
         ]
+
         for idx, msg in enumerate(messages):
             time_str = time.strftime("%H:%M:%S", time.localtime(msg.timestamp))
-            lines.append(f"[{idx}] {time_str} {msg.sender_name}: {msg.content}")
+            content = self._sanitize_content(msg.content)
+            lines.append(f"[{idx}] {time_str} {msg.sender_name}: {content}")
+
+        # 已有 bug 列表（用于去重）
+        if existing_bugs:
+            lines.append("")
+            lines.append("已记录的 bug 列表（供参考，避免重复记录）：")
+            for i, bug in enumerate(existing_bugs[:30], 1):  # 最多 30 条，控制 token
+                status_str = f"[{bug.get('status', 'open')}]"
+                lines.append(
+                    f"{i}. [{bug.get('severity', '?')}] {bug.get('summary', '')} "
+                    f"{status_str} (ID: {bug.get('id', '?')})"
+                )
+            lines.append("")
+
         lines.append(
-            "\n请分析这些记录中是否包含对 AstrBot 或其插件的 bug 反馈，输出 JSON 结果。"
+            "请分析这些记录中是否包含对 AstrBot 或其插件的 bug 反馈，"
+            "输出 JSON 结果。注意区分新 bug 和已记录的重复 bug。"
         )
         return "\n".join(lines)
+
+    @staticmethod
+    def _sanitize_content(content: str) -> str:
+        """清洗消息内容中的图片/视频等多媒体信息，避免多模态模型报错或占用 token。"""
+        if not content:
+            return "[空消息]"
+
+        # 替换图片 URL
+        content = _IMAGE_URL_RE.sub("[图片]", content)
+        # 替换视频 URL
+        content = _VIDEO_URL_RE.sub("[视频]", content)
+
+        # 如果清洗后只剩占位符，保留占位符
+        stripped = content.strip()
+        if stripped in ("[图片]", "[视频]", "[图片][视频]", "[视频][图片]"):
+            return stripped
+
+        # 如果清洗后为空
+        if not stripped:
+            return "[空消息]"
+
+        return content
+
+    @staticmethod
+    def _format_umo(umo: str) -> str:
+        """将 UMO 格式化为可读群信息。"""
+        # UMO 格式: platform:type:session_id
+        parts = umo.split(":", 2)
+        if len(parts) >= 3:
+            return f"平台={parts[0]}, 群/会话 ID={parts[2]}"
+        return umo
 
     # ------------------------------------------------------------------
     # Token 截断
@@ -242,7 +320,7 @@ class BugAnalyzer:
         patterns = [
             r"```json\s*(.*?)\s*```",  # ```json ... ```
             r"```\s*(.*?)\s*```",  # ``` ... ```
-            r"(\{[\s\S]*\})",  # 最外层 {...}
+            r"(\{[\s\S]*?\})",  # 最外层 {...} — 非贪婪匹配
         ]
         for pat in patterns:
             match = re.search(pat, text, re.DOTALL)
@@ -286,6 +364,8 @@ class BugAnalyzer:
                 summary=bug_data.get("summary", "") or "",
                 analysis=bug_data.get("analysis", "") or "",
                 related_messages=bug_data.get("related_messages", []) or [],
+                is_duplicate=bool(bug_data.get("is_duplicate", False)),
+                duplicate_of_id=bug_data.get("duplicate_of_id", "") or "",
             )
             result.bugs.append(bug)
 

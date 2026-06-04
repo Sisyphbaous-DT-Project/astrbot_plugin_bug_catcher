@@ -10,4 +10,9 @@ tags:
   - bug_tracking
   - ai_analysis
 
+# Dashboard 扩展页面
+pages:
+  - name: dashboard
+    title: Bug Catcher 面板
+
 # 不设置 default_activate，由用户在 WebUI 手动激活

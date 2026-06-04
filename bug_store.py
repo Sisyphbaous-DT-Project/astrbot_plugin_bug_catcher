@@ -1,7 +1,7 @@
 """
 Bug 持久化存储。
 
-JSON 文件读写，支持 CRUD、分页查询、状态更新。
+JSON 文件读写，支持 CRUD、分页查询、状态更新、重复 bug 合并。
 """
 
 from __future__ import annotations
@@ -10,15 +10,15 @@ import asyncio
 import json
 import os
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from astrbot.api import logger
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-from .chat_buffer import MessageRecord
 from .analyzer import AnalysisResult
+from .chat_buffer import MessageRecord
 
 
 @dataclass
@@ -29,7 +29,7 @@ class BugRecord:
     umo: str
     umo_display: str
     platform: str
-    created_at: str
+    created_at: str  # 首次发现时间（ISO）
     result: str  # suspected | confirmed
     severity: str
     summary: str
@@ -39,6 +39,9 @@ class BugRecord:
     status: str = "open"  # open | resolved | ignored
     resolved_at: Optional[str] = None
     note: str = ""
+    report_history: List[dict] = field(default_factory=list)
+    # report_history 每项: {"reported_at": str, "umo": str, "umo_display": str,
+    #                       "reporter_name": str, "reporter_id": str}
 
     def to_dict(self) -> dict:
         """转换为可序列化的 dict。"""
@@ -56,7 +59,7 @@ class BugRecord:
 class BugStore:
     """Bug 记录的 JSON 持久化存储。"""
 
-    _VERSION = 1
+    _VERSION = 2  # 版本升级：增加 report_history
     _FILE_NAME = "bugs.json"
 
     def __init__(self, data_dir: str | None = None):
@@ -96,7 +99,8 @@ class BugStore:
         version = data.get("version", 1)
         if version != self._VERSION:
             logger.warning(
-                f"[BugStore] 数据版本 {version} 与当前版本 {self._VERSION} 不匹配"
+                f"[BugStore] 数据版本 {version} 与当前版本 {self._VERSION} 不匹配，"
+                "尝试兼容加载"
             )
 
         bugs_data = data.get("bugs", [])
@@ -122,13 +126,12 @@ class BugStore:
         logger.info(f"[BugStore] 已加载 {len(self._bugs)} 条记录")
 
     async def _save(self) -> None:
-        """异步保存到 JSON 文件。"""
+        """异步保存到 JSON 文件（原子写入）。"""
         data = {
             "version": self._VERSION,
             "bugs": [bug.to_dict() for bug in self._bugs.values()],
             "stats": self._stats,
         }
-        # 使用临时文件 + 原子重命名，避免写入中断导致文件损坏
         tmp_path = self._file_path + ".tmp"
         try:
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -136,6 +139,12 @@ class BugStore:
             os.replace(tmp_path, self._file_path)
         except OSError as e:
             logger.error(f"[BugStore] 保存数据失败: {e}")
+            # 清理可能残留的临时文件
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
             raise
 
     # ------------------------------------------------------------------
@@ -148,19 +157,58 @@ class BugStore:
         analysis_result: AnalysisResult,
         raw_messages: List[MessageRecord],
         platform: str = "",
+        reporter_name: str = "",
+        reporter_id: str = "",
     ) -> List[BugRecord]:
-        """将分析结果中的 bug 添加到存储。"""
+        """将分析结果中的 bug 添加到存储，处理重复合并。"""
         if analysis_result.result == "none" or not analysis_result.bugs:
             return []
 
         async with self._lock:
             records = []
             now = datetime.now(timezone.utc).isoformat()
+            umo_display = self._build_umo_display(umo)
+
             for bug_item in analysis_result.bugs:
+                # 找到首个相关消息的 reporter 作为默认报告者
+                primary_msg = self._find_primary_message(
+                    bug_item.related_messages, raw_messages
+                )
+                actual_reporter_name = reporter_name or (
+                    primary_msg.sender_name if primary_msg else "未知"
+                )
+                actual_reporter_id = reporter_id or (
+                    primary_msg.sender_id if primary_msg else ""
+                )
+
+                report_entry = {
+                    "reported_at": now,
+                    "umo": umo,
+                    "umo_display": umo_display,
+                    "reporter_name": actual_reporter_name,
+                    "reporter_id": actual_reporter_id,
+                }
+
+                if bug_item.is_duplicate and bug_item.duplicate_of_id:
+                    # 尝试合并到已有记录
+                    existing = self._bugs.get(bug_item.duplicate_of_id)
+                    if existing:
+                        existing.report_history.append(report_entry)
+                        logger.info(
+                            f"[BugStore] 重复 bug 合并到 {existing.id}: "
+                            f"{bug_item.summary[:40]}"
+                        )
+                        continue
+                    # 如果 ID 不存在，当作新记录处理
+                    logger.warning(
+                        f"[BugStore] duplicate_of_id {bug_item.duplicate_of_id} "
+                        "不存在，创建新记录"
+                    )
+
                 record = BugRecord(
                     id=str(uuid.uuid4()),
                     umo=umo,
-                    umo_display=self._build_umo_display(umo),
+                    umo_display=umo_display,
                     platform=platform,
                     created_at=now,
                     result=analysis_result.result,
@@ -171,11 +219,13 @@ class BugStore:
                     raw_messages=[
                         {
                             "timestamp": m.timestamp,
+                            "sender_id": m.sender_id,
                             "sender_name": m.sender_name,
                             "content": m.content,
                         }
                         for m in raw_messages
                     ],
+                    report_history=[report_entry],
                 )
                 self._bugs[record.id] = record
                 records.append(record)
@@ -192,6 +242,16 @@ class BugStore:
                 f"[BugStore] 新增 {len(records)} 条 {analysis_result.result} 记录"
             )
             return records
+
+    @staticmethod
+    def _find_primary_message(
+        related_indices: List[int], messages: List[MessageRecord]
+    ) -> MessageRecord | None:
+        """从 related_messages 索引中找到第一条有效消息。"""
+        for idx in related_indices:
+            if 0 <= idx < len(messages):
+                return messages[idx]
+        return messages[0] if messages else None
 
     async def get_bugs(
         self,
@@ -255,7 +315,8 @@ class BugStore:
             if not bug:
                 return False
             bug.status = status
-            if note:
+            # 使用 is not None 判断，允许空字符串清空 note
+            if note is not None:
                 bug.note = note
             if status == "resolved":
                 bug.resolved_at = datetime.now(timezone.utc).isoformat()
@@ -264,10 +325,22 @@ class BugStore:
             return True
 
     async def delete_bug(self, bug_id: str) -> bool:
-        """删除 bug 记录。"""
+        """删除 bug 记录并同步更新统计。"""
         async with self._lock:
-            if bug_id not in self._bugs:
+            bug = self._bugs.get(bug_id)
+            if not bug:
                 return False
+
+            # 同步减少统计
+            if bug.result == "confirmed":
+                self._stats["total_confirmed"] = max(
+                    0, self._stats.get("total_confirmed", 0) - 1
+                )
+            else:
+                self._stats["total_suspected"] = max(
+                    0, self._stats.get("total_suspected", 0) - 1
+                )
+
             del self._bugs[bug_id]
             await self._save()
             logger.info(f"[BugStore] 删除记录: {bug_id}")
@@ -277,6 +350,24 @@ class BugStore:
         """获取统计信息。"""
         async with self._lock:
             return dict(self._stats)
+
+    async def get_open_bugs(self, limit: int = 50) -> List[dict]:
+        """获取 open 状态的 bug 列表（供 AI 去重参考）。"""
+        async with self._lock:
+            bugs = [
+                {
+                    "id": b.id,
+                    "summary": b.summary,
+                    "severity": b.severity,
+                    "status": b.status,
+                    "created_at": b.created_at,
+                }
+                for b in self._bugs.values()
+                if b.status == "open"
+            ]
+        # 按时间倒序
+        bugs.sort(key=lambda b: b["created_at"], reverse=True)
+        return bugs[:limit]
 
     # ------------------------------------------------------------------
     # 辅助

@@ -38,12 +38,11 @@ class TestBugAnalyzer:
 
     def test_build_prompt_format(self, analyzer, sample_messages):
         """Prompt 应包含正确格式的消息列表。"""
-        prompt = analyzer._build_prompt(sample_messages)
-        assert "以下是近期 5 条群聊记录" in prompt
+        prompt = analyzer._build_prompt(sample_messages, "qq:group:12345")
+        assert "消息数量：5 条" in prompt
         assert "[0]" in prompt
         assert "[4]" in prompt
         assert "安装插件后报错了" in prompt
-        assert "请分析这些记录" in prompt
 
     # ------------------------------------------------------------------
     # Token 截断
@@ -51,7 +50,7 @@ class TestBugAnalyzer:
 
     def test_truncate_not_needed(self, analyzer, sample_messages):
         """短 Prompt 不应被截断。"""
-        prompt = analyzer._build_prompt(sample_messages)
+        prompt = analyzer._build_prompt(sample_messages, "qq:group:12345")
         result = analyzer._truncate_if_needed(prompt)
         assert result == prompt
 
@@ -69,11 +68,11 @@ class TestBugAnalyzer:
             )
             for i in range(200)
         ]
-        prompt = analyzer._build_prompt(messages)
+        prompt = analyzer._build_prompt(messages, "qq:group:12345")
         truncated = analyzer._truncate_if_needed(prompt)
         assert len(truncated) < len(prompt)
         # 尾部指令应保留
-        assert "请分析这些记录" in truncated
+        assert "输出 JSON 结果" in truncated
 
     # ------------------------------------------------------------------
     # JSON 解析

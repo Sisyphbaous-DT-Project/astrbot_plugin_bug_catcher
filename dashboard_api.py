@@ -74,6 +74,8 @@ class DashboardAPI:
         status = request.args.get("status") or None
         umo = request.args.get("umo") or None
         sort_by = request.args.get("sort_by", "created_at")
+        if sort_by not in ("created_at", "severity"):
+            sort_by = "created_at"
         sort_desc = _bool_param(request.args, "sort_desc", True)
 
         try:
