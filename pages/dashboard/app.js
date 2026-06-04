@@ -49,7 +49,7 @@ async function getBridge() {
     await loadBugs();
   } catch (e) {
     console.error('[BugCatcher] 初始化失败:', e);
-    showError('初始化失败: ' + e.message);
+    showError('初始化失败: ' + (e?.message || '未知错误'));
   }
 })();
 
@@ -94,23 +94,10 @@ function bindEvents() {
 
 async function loadStats() {
   try {
-    const res = await bridge.apiGet('stats');
-    if (res.code !== 0) {
-      console.warn('获取统计失败:', res.message);
-      return;
-    }
-    const data = res.data || {};
+    const data = unwrapRes(await bridge.apiGet('stats')) || {};
     document.getElementById('statConfirmed').textContent = data.total_confirmed || 0;
     document.getElementById('statSuspected').textContent = data.total_suspected || 0;
     document.getElementById('statTotal').textContent = (data.total_confirmed || 0) + (data.total_suspected || 0);
-
-    // 今日新增
-    const todayRes = await bridge.apiGet('bugs', {
-      page: 1,
-      page_size: 1,
-      status: ''
-    });
-    // 由于后端没有按日期筛选，这里简单显示总记录数
     document.getElementById('statToday').textContent = '-';
   } catch (e) {
     console.error('加载统计失败:', e);
@@ -130,20 +117,14 @@ async function loadBugs() {
     if (state.filters.status) params.status = state.filters.status;
     if (state.filters.result) params.result = state.filters.result;
 
-    const res = await bridge.apiGet('bugs', params);
-    if (res.code !== 0) {
-      showError('加载失败: ' + res.message);
-      return;
-    }
-
-    const data = res.data || {};
+    const data = unwrapRes(await bridge.apiGet('bugs', params)) || {};
     state.bugs = data.bugs || [];
     state.total = data.total || 0;
 
     renderBugs();
     renderPagination();
   } catch (e) {
-    showError('加载失败: ' + e.message);
+    showError('加载失败: ' + (e?.message || '未知错误'));
   }
 }
 
@@ -275,29 +256,21 @@ async function ignoreBug(id) {
 
 async function updateStatus(id, status) {
   try {
-    const res = await bridge.apiPost(`bugs/${id}/status`, { status });
-    if (res.code !== 0) {
-      alert('更新失败: ' + res.message);
-      return;
-    }
+    unwrapRes(await bridge.apiPost(`bugs/${id}/status`, { status }));
     await loadBugs();
   } catch (e) {
-    alert('更新失败: ' + e.message);
+    alert('更新失败: ' + (e?.message || '未知错误'));
   }
 }
 
 async function deleteBug(id) {
   if (!confirm('确定删除此记录？删除后不可恢复。')) return;
   try {
-    const res = await bridge.apiPost(`bugs/${id}/delete`, {});
-    if (res.code !== 0) {
-      alert('删除失败: ' + res.message);
-      return;
-    }
+    unwrapRes(await bridge.apiPost(`bugs/${id}/delete`, {}));
     await loadBugs();
     await loadStats();
   } catch (e) {
-    alert('删除失败: ' + e.message);
+    alert('删除失败: ' + (e?.message || '未知错误'));
   }
 }
 
@@ -311,6 +284,20 @@ function goPage(page) {
 // ------------------------------------------------------------------
 // 工具函数
 // ------------------------------------------------------------------
+
+// Dashboard 父窗口会自动剥离后端 {code, message, data} 的外层包装
+// 有 data 字段的响应 → 前端收到 data 内容（无 code/message）
+// 无 data 字段的响应 → 前端收到完整包装 {code, message}
+// 统一处理这两种格式
+function unwrapRes(res) {
+  if (res && typeof res.code === 'number') {
+    if (res.code !== 0) {
+      throw new Error(res.message || '请求失败');
+    }
+    return res.data ?? null;
+  }
+  return res;
+}
 
 function showError(msg) {
   document.getElementById('bugList').innerHTML = `
