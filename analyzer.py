@@ -259,7 +259,8 @@ primary_message_index 规则（重要）：
         """将 UMO 格式化为可读群信息。"""
         parts = umo.split(":", 2)
         if len(parts) >= 3:
-            return f"平台={parts[0]}, 群/会话 ID={parts[2].replace('\n', ' ')}"
+            session_id = parts[2].replace("\n", " ")
+            return f"平台={parts[0]}, 群/会话 ID={session_id}"
         return umo.replace("\n", " ")
 
     # ------------------------------------------------------------------
