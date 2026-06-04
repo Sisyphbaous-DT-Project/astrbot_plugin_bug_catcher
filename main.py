@@ -115,17 +115,17 @@ class BugCatcherPlugin(Star):
             )
         except Exception as e:
             logger.error(f"[BugCatcher] 分析异常: {e}", exc_info=True)
-            self.buffer_mgr.clear_buffer(umo)
+            await self.buffer_mgr.clear_buffer(umo)
             return
 
         if result.error:
             logger.warning(f"[BugCatcher] 分析失败: {result.error}")
-            self.buffer_mgr.clear_buffer(umo)
+            await self.buffer_mgr.clear_buffer(umo)
             return
 
         if result.result == "none":
             logger.info("[BugCatcher] 分析结果: 未发现 bug")
-            self.buffer_mgr.clear_buffer(umo)
+            await self.buffer_mgr.clear_buffer(umo)
             return
 
         log_level = logging.WARNING if result.result == "suspected" else logging.ERROR
@@ -160,4 +160,4 @@ class BugCatcherPlugin(Star):
         except Exception as e:
             logger.error(f"[BugCatcher] 保存 bug 记录失败: {e}", exc_info=True)
 
-        self.buffer_mgr.clear_buffer(umo)
+        await self.buffer_mgr.clear_buffer(umo)

@@ -267,7 +267,7 @@ class BugAnalyzer:
         while bug_lines and _current_tok() > self._MAX_PROMPT_TOKENS:
             bug_lines.pop(0)
 
-        truncated = "\n".join(header + bug_lines + msg_lines)
+        truncated = "\n".join(header + msg_lines + bug_lines)
         logger.info(
             f"[Analyzer] 截断后剩余 {len(msg_lines)} 条消息 + "
             f"{len(bug_lines)} 条参考 bug，"
