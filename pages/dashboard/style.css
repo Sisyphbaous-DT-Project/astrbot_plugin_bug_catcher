@@ -364,6 +364,26 @@ body {
 .msg-line:last-child { border-bottom: none; }
 .msg-time { color: var(--text-muted); margin-right: 8px; }
 .msg-sender { color: var(--primary); font-weight: 500; margin-right: 8px; }
+.msg-primary {
+  background: rgba(220, 38, 38, 0.1);
+  border-left: 3px solid var(--danger);
+  padding-left: 8px;
+  margin-left: -4px;
+  border-radius: 0 4px 4px 0;
+}
+.msg-primary-badge {
+  display: inline-block;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
 
 /* 汇报历史 */
 .report-history {

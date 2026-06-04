@@ -36,6 +36,7 @@ class BugRecord:
     analysis: str
     related_messages: List[int]
     raw_messages: List[dict]  # MessageRecord 的 dict 形式
+    primary_message_index: int = -1  # 导致判断为 bug 的最关键消息索引
     status: str = "open"  # open | resolved | ignored
     resolved_at: Optional[str] = None
     note: str = ""
@@ -173,11 +174,18 @@ class BugStore:
             umo_display = self._build_umo_display(umo)
 
             for bug_item in analysis_result.bugs:
-                # 找到首个相关消息的 reporter 作为默认报告者
-                primary_msg = self._find_primary_message(
-                    bug_item.related_messages, raw_messages
-                )
-                # 优先从 related_messages 中定位真实报告者，
+                # 优先使用 AI 标注的 primary_message_index 定位报告者，
+                # 更精准地指向导致 bug 判断的最关键消息
+                if (
+                    bug_item.primary_message_index >= 0
+                    and bug_item.primary_message_index < len(raw_messages)
+                ):
+                    primary_msg = raw_messages[bug_item.primary_message_index]
+                else:
+                    primary_msg = self._find_primary_message(
+                        bug_item.related_messages, raw_messages
+                    )
+                # 优先从 primary_message 中定位真实报告者，
                 # 回退到 main.py 传入的批次首条消息发送者
                 actual_reporter_name = (
                     primary_msg.sender_name if primary_msg else reporter_name
@@ -221,6 +229,7 @@ class BugStore:
                     summary=bug_item.summary,
                     analysis=bug_item.analysis,
                     related_messages=bug_item.related_messages,
+                    primary_message_index=bug_item.primary_message_index,
                     raw_messages=[
                         {
                             "timestamp": m.timestamp,

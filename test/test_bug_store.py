@@ -33,12 +33,14 @@ class TestBugStore:
                     summary="模块加载失败",
                     analysis="用户报告安装后报错",
                     related_messages=[0, 1],
+                    primary_message_index=0,
                 ),
                 BugItem(
                     severity="medium",
                     summary="配置项缺失",
                     analysis="缺少必要配置",
                     related_messages=[2],
+                    primary_message_index=1,
                 ),
             ],
         )
@@ -142,6 +144,62 @@ class TestBugStore:
             raw_messages=[],
         )
         assert len(records) == 0
+
+    @pytest.mark.asyncio
+    async def test_add_bugs_primary_message_index(self, store, sample_messages):
+        """应正确存储 primary_message_index 并用其定位报告者。"""
+        from astrbot_plugin_bug_catcher.analyzer import AnalysisResult, BugItem
+
+        analysis = AnalysisResult(
+            result="confirmed",
+            bugs=[
+                BugItem(
+                    severity="high",
+                    summary="崩溃",
+                    analysis="x",
+                    related_messages=[1],
+                    primary_message_index=1,  # 应指向 用户B
+                )
+            ],
+        )
+        records = await store.add_bugs_from_analysis(
+            umo="test:GROUP_MESSAGE:1",
+            analysis_result=analysis,
+            raw_messages=sample_messages,
+        )
+        assert len(records) == 1
+        assert records[0].primary_message_index == 1
+        # 报告者应从 primary_message_index 指向的消息获取
+        assert records[0].report_history[0]["reporter_name"] == "用户B"
+
+    @pytest.mark.asyncio
+    async def test_add_bugs_primary_message_index_fallback(
+        self, store, sample_messages
+    ):
+        """PMI 无效时应回退到 related_messages 定位报告者。"""
+        from astrbot_plugin_bug_catcher.analyzer import AnalysisResult, BugItem
+
+        analysis = AnalysisResult(
+            result="confirmed",
+            bugs=[
+                BugItem(
+                    severity="high",
+                    summary="崩溃",
+                    analysis="x",
+                    related_messages=[1],  # 用户B
+                    primary_message_index=-1,  # 无效，应回退到 related_messages
+                )
+            ],
+        )
+        records = await store.add_bugs_from_analysis(
+            umo="test:GROUP_MESSAGE:1",
+            analysis_result=analysis,
+            raw_messages=sample_messages,
+        )
+        assert len(records) == 1
+        assert records[0].primary_message_index == -1
+        # 回退到 related_messages[0] 指向的用户B
+        assert records[0].report_history[0]["reporter_name"] == "用户B"
 
     @pytest.mark.asyncio
     async def test_get_bugs_pagination(self, store, sample_analysis, sample_messages):

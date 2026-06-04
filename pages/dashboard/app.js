@@ -227,13 +227,18 @@ async function showDetail(id) {
   const bug = state.bugs.find(b => b.id === id);
   if (!bug) return;
 
-  const rawMsgs = (bug.raw_messages || []).map(m => `
-    <div class="msg-line">
+  const pmi = bug.primary_message_index;
+  const rawMsgs = (bug.raw_messages || []).map((m, idx) => {
+    const isPrimary = idx === pmi;
+    return `
+    <div class="msg-line${isPrimary ? ' msg-primary' : ''}">
+      ${isPrimary ? '<span class="msg-primary-badge">关键消息</span>' : ''}
       <span class="msg-time">${formatTime(m.timestamp, true)}</span>
       <span class="msg-sender">${escapeHtml(m.sender_name)}</span>
       <span>${escapeHtml(m.content)}</span>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   // 汇报历史
   const reportHistory = (bug.report_history || []);

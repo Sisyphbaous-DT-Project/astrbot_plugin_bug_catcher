@@ -43,6 +43,7 @@ class BugItem:
     related_messages: List[int] = field(default_factory=list)
     is_duplicate: bool = False
     duplicate_of_id: str = ""
+    primary_message_index: int = -1  # 导致判断为 bug 的最关键消息索引，-1 表示未指定
 
 
 @dataclass
@@ -72,9 +73,10 @@ class BugAnalyzer:
             "severity": "low" | "medium" | "high" | "critical",
             "summary": "用一句话简要描述这个 bug",
             "analysis": "详细分析为什么判断这是 bug，基于哪些聊天记录得出此结论。如果是重复 bug，请说明首次发现时间和之前的记录 ID。",
-            "related_messages": [0],
+            "related_messages": [0, 1],
             "is_duplicate": false,
-            "duplicate_of_id": ""
+            "duplicate_of_id": "",
+            "primary_message_index": 0
         }
     ]
 }
@@ -84,6 +86,12 @@ class BugAnalyzer:
 - 请仔细区分不同的问题本质，将每个独立的 bug 作为一个单独的对象放入 bugs 数组
 - 不要将多个不同的 bug 合并成一条描述，每个 bug 应有独立的 severity、summary、analysis 和 related_messages
 - 如果群聊中确实存在多条不同来源的 bug 反馈，bugs 数组应包含所有独立的 bug 记录
+
+primary_message_index 规则（重要）：
+- primary_message_index 是导致你判断这是 bug 的最关键的一条消息索引（必须是单个整数，从 0 开始）
+- 这条消息应该是直接包含报错信息、异常描述、错误截图或明确 bug 证据的那一条
+- related_messages 可以包含多条相关消息，但 primary_message_index 只标出其中最关键的一条
+- 如果聊天记录中没有哪条消息能明确指向 bug 根源（例如只是多人口头描述），设置为 -1
 
 判断标准：
 - "none"：聊天记录完全是闲聊、技术讨论、使用教程、功能咨询等，没有任何 bug 报告
@@ -141,7 +149,21 @@ class BugAnalyzer:
             logger.warning("[Analyzer] LLM 返回空文本")
             return AnalysisResult(raw_response="", error="empty response")
 
-        return self._parse_response(response_text)
+        result = self._parse_response(response_text)
+
+        # 校验并修正 primary_message_index 范围
+        if result.result != "none" and result.bugs:
+            msg_count = len(messages)
+            for bug in result.bugs:
+                # bool 是 int 的子类，需要显式排除
+                if not isinstance(bug.primary_message_index, int) or isinstance(
+                    bug.primary_message_index, bool
+                ):
+                    bug.primary_message_index = -1
+                elif not (-1 <= bug.primary_message_index < msg_count):
+                    bug.primary_message_index = -1
+
+        return result
 
     # ------------------------------------------------------------------
     # Prompt 构建
@@ -324,6 +346,17 @@ class BugAnalyzer:
         for bug_data in bugs_data:
             if not isinstance(bug_data, dict):
                 continue
+            # 解析 primary_message_index，做基本类型容错
+            # 拒绝 bool（JSON true/false）和 float（JSON 1.5 截断问题）
+            pmi = bug_data.get("primary_message_index", -1)
+            if pmi is None or isinstance(pmi, bool) or isinstance(pmi, float):
+                pmi = -1
+            else:
+                try:
+                    pmi = int(pmi)
+                except (TypeError, ValueError):
+                    pmi = -1
+
             bug = BugItem(
                 severity=self._validate_severity(bug_data.get("severity", "medium")),
                 summary=bug_data.get("summary", "") or "",
@@ -331,6 +364,7 @@ class BugAnalyzer:
                 related_messages=bug_data.get("related_messages", []) or [],
                 is_duplicate=bool(bug_data.get("is_duplicate", False)),
                 duplicate_of_id=str(bug_data.get("duplicate_of_id", "") or ""),
+                primary_message_index=pmi,
             )
             result.bugs.append(bug)
 

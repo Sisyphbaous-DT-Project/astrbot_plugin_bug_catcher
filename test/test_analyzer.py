@@ -129,6 +129,56 @@ class TestBugAnalyzer:
         assert result.result == "confirmed"
         assert result.bugs[0].related_messages == ["0", 1, "abc"]
 
+    def test_parse_primary_message_index(self, analyzer):
+        """应正确解析 primary_message_index。"""
+        text = (
+            '{"result": "confirmed", "bugs": [{"severity": "high", '
+            '"summary": "崩溃", "analysis": "复现", "related_messages": [2], '
+            '"primary_message_index": 2}]}'
+        )
+        result = analyzer._parse_response(text)
+        assert result.bugs[0].primary_message_index == 2
+
+    def test_parse_primary_message_index_string(self, analyzer):
+        """字符串形式的 primary_message_index 应被转为 int。"""
+        text = (
+            '{"result": "confirmed", "bugs": [{"severity": "high", '
+            '"summary": "x", "analysis": "y", "related_messages": [0], '
+            '"primary_message_index": "1"}]}'
+        )
+        result = analyzer._parse_response(text)
+        assert result.bugs[0].primary_message_index == 1
+
+    def test_parse_primary_message_index_invalid(self, analyzer):
+        """非法 primary_message_index 应回退为 -1。"""
+        text = (
+            '{"result": "confirmed", "bugs": [{"severity": "high", '
+            '"summary": "x", "analysis": "y", "related_messages": [0], '
+            '"primary_message_index": "abc"}]}'
+        )
+        result = analyzer._parse_response(text)
+        assert result.bugs[0].primary_message_index == -1
+
+    def test_parse_primary_message_index_float(self, analyzer):
+        """float 类型的 primary_message_index 应被拒绝（避免静默截断）。"""
+        text = (
+            '{"result": "confirmed", "bugs": [{"severity": "high", '
+            '"summary": "x", "analysis": "y", "related_messages": [0], '
+            '"primary_message_index": 1.5}]}'
+        )
+        result = analyzer._parse_response(text)
+        assert result.bugs[0].primary_message_index == -1
+
+    def test_parse_primary_message_index_bool(self, analyzer):
+        """bool 类型的 primary_message_index 应被拒绝。"""
+        text = (
+            '{"result": "confirmed", "bugs": [{"severity": "high", '
+            '"summary": "x", "analysis": "y", "related_messages": [0], '
+            '"primary_message_index": true}]}'
+        )
+        result = analyzer._parse_response(text)
+        assert result.bugs[0].primary_message_index == -1
+
     # ------------------------------------------------------------------
     # 字段校验
     # ------------------------------------------------------------------
@@ -228,3 +278,68 @@ class TestBugAnalyzer:
 
         result = await analyzer.analyze(sample_messages, "test_umo")
         assert result.error == "empty response"
+
+    @pytest.mark.asyncio
+    async def test_analyze_primary_message_index_clamped(
+        self, analyzer, mock_context, sample_messages
+    ):
+        """越界的 primary_message_index 应在 analyze 中被修正为 -1。"""
+        analyzer.provider_id = "test_provider"
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text=(
+                '{"result": "confirmed", "bugs": [{"severity": "high", '
+                '"summary": "崩溃", "analysis": "复现", "related_messages": [0], '
+                '"primary_message_index": 999}]}'
+            )
+        )
+
+        result = await analyzer.analyze(sample_messages, "test_umo")
+        assert result.result == "confirmed"
+        assert result.bugs[0].primary_message_index == -1
+
+    @pytest.mark.asyncio
+    async def test_analyze_primary_message_index_valid(
+        self, analyzer, mock_context, sample_messages
+    ):
+        """合法的 primary_message_index 应被保留。"""
+        analyzer.provider_id = "test_provider"
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text=(
+                '{"result": "confirmed", "bugs": [{"severity": "high", '
+                '"summary": "崩溃", "analysis": "复现", "related_messages": [2], '
+                '"primary_message_index": 2}]}'
+            )
+        )
+
+        result = await analyzer.analyze(sample_messages, "test_umo")
+        assert result.result == "confirmed"
+        assert result.bugs[0].primary_message_index == 2
+
+    @pytest.mark.asyncio
+    async def test_analyze_primary_message_index_boundary(
+        self, analyzer, mock_context, sample_messages
+    ):
+        """边界值 -1 和 len-1 应被正确处理。"""
+        analyzer.provider_id = "test_provider"
+        # PMI = -1 应保持
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text=(
+                '{"result": "confirmed", "bugs": [{"severity": "high", '
+                '"summary": "a", "analysis": "b", "related_messages": [0], '
+                '"primary_message_index": -1}]}'
+            )
+        )
+        result = await analyzer.analyze(sample_messages, "test_umo")
+        assert result.bugs[0].primary_message_index == -1
+
+        # PMI = len(messages) - 1（最大合法值）应保持
+        last_idx = len(sample_messages) - 1
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text=(
+                f'{{"result": "confirmed", "bugs": [{{"severity": "high", '
+                f'"summary": "a", "analysis": "b", "related_messages": [{last_idx}], '
+                f'"primary_message_index": {last_idx}}}]}}'
+            )
+        )
+        result = await analyzer.analyze(sample_messages, "test_umo")
+        assert result.bugs[0].primary_message_index == last_idx
