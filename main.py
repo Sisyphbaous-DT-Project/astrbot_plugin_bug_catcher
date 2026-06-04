@@ -32,6 +32,7 @@ class BugCatcherPlugin(Star):
         self.dashboard_api = DashboardAPI(self.bug_store, self.diagnostics)
         self._active = True
         self._analysis_tasks: set[asyncio.Task] = set()
+        self._diagnostic_tasks: set[asyncio.Task] = set()
         self._scan_task: asyncio.Task | None = None
         self.dashboard_api.register(self.context)
         logger.info(f"[BugCatcher] 插件初始化完成，配置: {self.config}")
@@ -51,6 +52,7 @@ class BugCatcherPlugin(Star):
         self.buffer_mgr.stop_cleanup_task()
         await self._stop_scan_task()
         await self._cancel_analysis_tasks()
+        await self._drain_diagnostic_tasks()
         self.dashboard_api.unregister(self.context)
         logger.info("[BugCatcher] 插件已停用，资源已释放")
 
@@ -222,9 +224,9 @@ class BugCatcherPlugin(Star):
                 logger.warning(f"[BugCatcher] 获取已有 bug 列表失败: {e}")
                 await self.diagnostics.record_warning(
                     "获取已有 bug 列表失败",
-                    str(e),
+                    f"{e.__class__.__name__} occurred",
                     source="main.get_open_bugs",
-                    context={"umo": umo},
+                    context={"umo": umo, "exception_type": e.__class__.__name__},
                 )
                 existing_bugs = []
 
@@ -312,13 +314,20 @@ class BugCatcherPlugin(Star):
     ) -> None:
         """在同步回调中异步记录诊断事件。"""
         try:
-            asyncio.create_task(
+            task = asyncio.create_task(
                 self.diagnostics.record_error(
-                    title,
-                    error,
-                    source=source,
-                    context=context,
+                    title, error, source=source, context=context
                 )
             )
+            self._diagnostic_tasks.add(task)
+            task.add_done_callback(self._diagnostic_tasks.discard)
         except RuntimeError:
             pass
+
+    async def _drain_diagnostic_tasks(self) -> None:
+        """等待后台诊断写入任务结束，避免停用时丢失最后一条异常。"""
+        if not self._diagnostic_tasks:
+            return
+        tasks = list(self._diagnostic_tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._diagnostic_tasks.clear()

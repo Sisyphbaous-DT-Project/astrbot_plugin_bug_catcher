@@ -11,7 +11,6 @@ import asyncio
 import json
 import os
 import time
-import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -35,7 +34,11 @@ class DiagnosticsStore:
         self._file_path = os.path.join(data_dir, self._FILE_NAME)
         self._lock = asyncio.Lock()
         self._events: list[dict[str, Any]] = []
-        self.max_entries = max(20, int(config.get("diagnostics_max_entries", 200)))
+        self.max_entries = _safe_int_config(
+            config.get("diagnostics_max_entries", 200),
+            default=200,
+            min_value=20,
+        )
 
     async def load(self) -> None:
         """加载历史诊断事件。"""
@@ -64,9 +67,9 @@ class DiagnosticsStore:
         *,
         source: str = "runtime",
         context: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
         """记录 warning 级别诊断。"""
-        await self.record_event(
+        return await self.record_event(
             "warning",
             title,
             message,
@@ -82,19 +85,18 @@ class DiagnosticsStore:
         source: str = "runtime",
         context: dict[str, Any] | None = None,
         include_traceback: bool = True,
-    ) -> None:
+    ) -> bool:
         """记录 error 级别诊断。"""
         if isinstance(error, BaseException):
-            message = str(error) or error.__class__.__name__
+            message = f"{error.__class__.__name__} occurred"
         else:
-            message = str(error)
+            message = error
         safe_context = dict(context or {})
-        if isinstance(error, BaseException) and include_traceback:
-            safe_context["traceback"] = traceback.format_exception_only(
-                type(error),
-                error,
-            )[-1].strip()
-        await self.record_event(
+        if isinstance(error, BaseException):
+            safe_context["exception_type"] = error.__class__.__name__
+            if include_traceback:
+                safe_context["exception"] = _safe_exception_name(error)
+        return await self.record_event(
             "error",
             title,
             message,
@@ -110,7 +112,7 @@ class DiagnosticsStore:
         *,
         source: str = "runtime",
         context: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
         """记录一条诊断事件。"""
         level = level.lower()
         if level not in self._VALID_LEVELS:
@@ -129,9 +131,13 @@ class DiagnosticsStore:
         }
 
         async with self._lock:
+            snapshot = list(self._events)
             self._events.append(event)
             self._trim()
-            await self._save_locked()
+            if not await self._save_locked():
+                self._events = snapshot
+                return False
+            return True
 
     async def list_events(
         self,
@@ -182,11 +188,12 @@ class DiagnosticsStore:
                 "total": len(self._events),
             }
 
-    async def mark_read(self, ids: list[str] | None = None) -> int:
+    async def mark_read(self, ids: list[str] | None = None) -> tuple[int, bool]:
         """标记诊断事件为已读；ids 为空时标记全部。"""
         id_set = set(ids or [])
         count = 0
         async with self._lock:
+            snapshot = [dict(event) for event in self._events]
             for event in self._events:
                 if ids and event.get("id") not in id_set:
                     continue
@@ -194,22 +201,27 @@ class DiagnosticsStore:
                     event["unread"] = False
                     count += 1
             if count:
-                await self._save_locked()
-        return count
+                if not await self._save_locked():
+                    self._events = snapshot
+                    return count, False
+        return count, True
 
-    async def clear(self) -> int:
+    async def clear(self) -> tuple[int, bool]:
         """清空全部诊断事件。"""
         async with self._lock:
+            snapshot = list(self._events)
             count = len(self._events)
             self._events = []
-            await self._save_locked()
-        return count
+            if not await self._save_locked():
+                self._events = snapshot
+                return count, False
+        return count, True
 
     def _trim(self) -> None:
         if len(self._events) > self.max_entries:
             self._events = self._events[-self.max_entries :]
 
-    async def _save_locked(self) -> None:
+    async def _save_locked(self) -> bool:
         data = {
             "version": self._VERSION,
             "events": self._events,
@@ -226,6 +238,8 @@ class DiagnosticsStore:
                     os.remove(tmp_path)
             except OSError:
                 pass
+            return False
+        return True
 
 
 def _safe_text(value: Any, limit: int) -> str:
@@ -234,6 +248,22 @@ def _safe_text(value: Any, limit: int) -> str:
     if len(text) > limit:
         return text[: limit - 1] + "…"
     return text
+
+
+def _safe_int_config(value: Any, *, default: int, min_value: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(min_value, parsed)
+
+
+def _safe_exception_name(error: BaseException) -> str:
+    module = error.__class__.__module__
+    name = error.__class__.__name__
+    if module and module != "builtins":
+        return f"{module}.{name}"
+    return name
 
 
 def _sanitize_context(context: dict[str, Any]) -> dict[str, str | int | float | bool]:

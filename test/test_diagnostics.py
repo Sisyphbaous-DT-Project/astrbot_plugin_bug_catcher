@@ -4,6 +4,8 @@ DiagnosticsStore 单元测试。
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from astrbot_plugin_bug_catcher.diagnostics import DiagnosticsStore
@@ -32,6 +34,8 @@ class TestDiagnosticsStore:
         events = await store.list_events(limit=10)
         assert len(events) == 2
         assert events[0]["level"] == "error"
+        assert events[0]["message"] == "RuntimeError occurred"
+        assert "save failed" not in str(events[0])
 
     @pytest.mark.asyncio
     async def test_mark_read_and_clear(self, temp_data_dir):
@@ -39,13 +43,15 @@ class TestDiagnosticsStore:
         store = DiagnosticsStore(data_dir=str(temp_data_dir))
         await store.record_error("错误", "boom")
 
-        marked = await store.mark_read()
+        marked, saved = await store.mark_read()
         summary = await store.get_summary()
         assert marked == 1
+        assert saved is True
         assert summary["status"] == "ok"
 
-        cleared = await store.clear()
+        cleared, saved = await store.clear()
         assert cleared == 1
+        assert saved is True
         assert await store.list_events() == []
 
     @pytest.mark.asyncio
@@ -67,3 +73,25 @@ class TestDiagnosticsStore:
 
         assert len(events) == 20
         assert events[-1]["title"] == "警告5"
+
+    @pytest.mark.asyncio
+    async def test_invalid_max_entries_falls_back(self, temp_data_dir):
+        """非法 diagnostics_max_entries 不应导致初始化失败。"""
+        store = DiagnosticsStore(
+            {"diagnostics_max_entries": "not-an-int"},
+            data_dir=str(temp_data_dir),
+        )
+
+        assert store.max_entries == 200
+
+    @pytest.mark.asyncio
+    async def test_save_failure_rolls_back(self, temp_data_dir):
+        """诊断持久化失败时应回滚内存变更并返回失败。"""
+        store = DiagnosticsStore(data_dir=str(temp_data_dir))
+
+        with patch("astrbot_plugin_bug_catcher.diagnostics.os.replace") as mock_replace:
+            mock_replace.side_effect = OSError("disk full")
+            saved = await store.record_warning("警告", "msg")
+
+        assert saved is False
+        assert await store.list_events() == []

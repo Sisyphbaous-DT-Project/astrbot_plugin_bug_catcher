@@ -406,7 +406,7 @@ class TestBugAnalyzer:
 
         result = await analyzer.analyze(sample_messages, "test_umo")
         assert result.error != ""
-        assert "网络超时" in result.error
+        assert result.error == "LLM 调用失败: ConnectionError"
 
     @pytest.mark.asyncio
     async def test_analyze_empty_response(

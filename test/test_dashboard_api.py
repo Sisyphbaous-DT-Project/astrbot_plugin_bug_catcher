@@ -32,8 +32,8 @@ class TestDashboardAPI:
         diagnostics = MagicMock(spec=DiagnosticsStore)
         diagnostics.get_summary = AsyncMock(return_value={"status": "ok"})
         diagnostics.list_events = AsyncMock(return_value=[])
-        diagnostics.mark_read = AsyncMock(return_value=2)
-        diagnostics.clear = AsyncMock(return_value=3)
+        diagnostics.mark_read = AsyncMock(return_value=(2, True))
+        diagnostics.clear = AsyncMock(return_value=(3, True))
         diagnostics.record_error = AsyncMock()
         diagnostics.record_warning = AsyncMock()
         return diagnostics
@@ -283,3 +283,28 @@ class TestDashboardAPI:
         json_data = await resp.get_json()
         assert json_data["code"] == 0
         assert json_data["data"]["cleared"] == 3
+
+    @pytest.mark.asyncio
+    async def test_mark_diagnostics_read_save_failed(self, api):
+        """标记已读持久化失败时应返回错误。"""
+        api.diagnostics.mark_read.return_value = (1, False)
+
+        with patch("astrbot_plugin_bug_catcher.dashboard_api.request") as mock_req:
+            mock_req.get_json = AsyncMock(return_value={})
+            resp = await api.mark_diagnostics_read()
+
+        json_data = await resp.get_json()
+        assert json_data["code"] == 1
+        assert "保存失败" in json_data["message"]
+
+    @pytest.mark.asyncio
+    async def test_clear_diagnostics_save_failed(self, api):
+        """清空诊断持久化失败时应返回错误。"""
+        api.diagnostics.clear.return_value = (2, False)
+
+        with patch("astrbot_plugin_bug_catcher.dashboard_api.request"):
+            resp = await api.clear_diagnostics()
+
+        json_data = await resp.get_json()
+        assert json_data["code"] == 1
+        assert "清空失败" in json_data["message"]

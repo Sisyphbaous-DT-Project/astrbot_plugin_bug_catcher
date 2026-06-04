@@ -237,12 +237,16 @@ class DashboardAPI:
         ids = body.get("ids")
         if ids is not None and not isinstance(ids, list):
             return self._error("ids 必须是列表")
-        count = await self.diagnostics.mark_read(ids=ids)
+        count, saved = await self.diagnostics.mark_read(ids=ids)
+        if not saved:
+            return self._error("诊断已读状态保存失败")
         return self._ok({"marked": count}, message="已标记为已读")
 
     async def clear_diagnostics(self, **kwargs) -> Any:
         """清空插件诊断事件。"""
-        count = await self.diagnostics.clear()
+        count, saved = await self.diagnostics.clear()
+        if not saved:
+            return self._error("诊断记录清空失败")
         return self._ok({"cleared": count}, message="诊断记录已清空")
 
 

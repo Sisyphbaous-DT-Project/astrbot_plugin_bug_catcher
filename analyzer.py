@@ -183,7 +183,7 @@ primary_message_index 规则（重要）：
             response = await self._call_llm(prompt, umo)
         except Exception as e:
             logger.error(f"[Analyzer] LLM 调用失败: {e}", exc_info=True)
-            return AnalysisResult(error=str(e))
+            return AnalysisResult(error=f"LLM 调用失败: {e.__class__.__name__}")
 
         response_text = getattr(response, "completion_text", "")
         if not response_text:

@@ -52,6 +52,24 @@ class TestBugCatcherPluginIntegration:
             await plugin.terminate()
             mock_stop.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_terminate_drains_diagnostic_tasks(self, plugin):
+        """终止时应等待后台诊断写入任务。"""
+        finished = False
+
+        async def wait_briefly():
+            nonlocal finished
+            await asyncio.sleep(0)
+            finished = True
+
+        task = asyncio.create_task(wait_briefly())
+        plugin._diagnostic_tasks.add(task)
+        with patch.object(plugin.buffer_mgr, "stop_cleanup_task"):
+            await plugin.terminate()
+
+        assert finished is True
+        assert plugin._diagnostic_tasks == set()
+
     # ------------------------------------------------------------------
     # 白名单过滤
     # ------------------------------------------------------------------
