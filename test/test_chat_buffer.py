@@ -149,6 +149,35 @@ class TestChatBufferManager:
         assert trigger.triggered is True
         assert trigger.reason == "time_threshold"
 
+    @pytest.mark.asyncio
+    async def test_time_threshold_trigger_for_new_umo(self, mgr):
+        """从未分析过的新 UMO 也应通过时间阈值触发分析。"""
+        # 添加少量消息，伪造时间为 10 分钟前
+        for i in range(3):
+            await mgr.add_message(
+                umo="new_umo",
+                sender_id="u1",
+                sender_name="用户",
+                content=f"msg {i}",
+            )
+        # 把最早的消息时间拨到 10 分钟前
+        buf = mgr._buffers["new_umo"]
+        buf[0] = buf[0].__class__(
+            timestamp=time.time() - 10 * 60,
+            sender_id=buf[0].sender_id,
+            sender_name=buf[0].sender_name,
+            content=buf[0].content,
+        )
+
+        trigger = await mgr.add_message(
+            umo="new_umo",
+            sender_id="u1",
+            sender_name="用户",
+            content="trigger msg",
+        )
+        assert trigger.triggered is True
+        assert trigger.reason == "time_threshold"
+
     # ------------------------------------------------------------------
     # 缓冲区操作
     # ------------------------------------------------------------------

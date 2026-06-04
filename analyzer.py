@@ -204,6 +204,8 @@ class BugAnalyzer:
         content = _IMAGE_URL_RE.sub("[图片]", content)
         # 替换视频 URL
         content = _VIDEO_URL_RE.sub("[视频]", content)
+        # 将消息内部换行压缩为空格，防止 _truncate_if_needed 按行截断时格式错乱
+        content = content.replace("\n", " ")
 
         stripped = content.strip()
         # 如果清洗后只剩占位符（任意数量），保留
@@ -345,6 +347,10 @@ class BugAnalyzer:
             if match:
                 extracted = match.group(1).strip()
                 if extracted.startswith("{") or extracted.startswith("["):
+                    # 对最宽松的 {...} fallback，要求必须包含 result 关键字，
+                    # 避免捕获到解释性文字中的无关 JSON 片段
+                    if pat == patterns[-1] and '"result"' not in extracted:
+                        continue
                     return extracted
         return None
 

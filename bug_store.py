@@ -174,12 +174,14 @@ class BugStore:
                 primary_msg = self._find_primary_message(
                     bug_item.related_messages, raw_messages
                 )
-                actual_reporter_name = reporter_name or (
-                    primary_msg.sender_name if primary_msg else "未知"
-                )
-                actual_reporter_id = reporter_id or (
-                    primary_msg.sender_id if primary_msg else ""
-                )
+                # 优先从 related_messages 中定位真实报告者，
+                # 回退到 main.py 传入的批次首条消息发送者
+                actual_reporter_name = (
+                    primary_msg.sender_name if primary_msg else reporter_name
+                ) or "未知"
+                actual_reporter_id = (
+                    primary_msg.sender_id if primary_msg else reporter_id
+                ) or ""
 
                 report_entry = {
                     "reported_at": now,
@@ -332,6 +334,8 @@ class BugStore:
                 return False
 
             # 同步减少统计
+            # 注意：total_analyzed 是累计分析次数（计数器），
+            # 删除单条记录不代表那次分析没发生过，故不扣减
             if bug.result == "confirmed":
                 self._stats["total_confirmed"] = max(
                     0, self._stats.get("total_confirmed", 0) - 1

@@ -128,19 +128,21 @@ class ChatBufferManager:
             )
 
         # 条件 2：时间阈值（低活跃群聊）
-        # 只有曾经分析过至少一次的 UMO 才检查时间阈值
-        if last is not None:
-            time_threshold_sec = self.time_threshold_min * 60
-            if now - last >= time_threshold_sec and len(msgs) > 0:
-                logger.info(
-                    f"[ChatBuffer] UMO={umo} 触发分析: 距离上次分析 "
-                    f"{int((now - last) / 60)} 分钟 >= 阈值 {self.time_threshold_min} 分钟"
-                )
-                return AnalysisTrigger(
-                    triggered=True,
-                    reason="time_threshold",
-                    messages=msgs,
-                )
+        # 从未分析过的 UMO 以最早消息的 timestamp 为参考点
+        reference_time = last if last is not None else msgs[0].timestamp
+        time_threshold_sec = self.time_threshold_min * 60
+        if now - reference_time >= time_threshold_sec and len(msgs) > 0:
+            elapsed = int((now - reference_time) / 60)
+            reason_text = "距离上次分析" if last is not None else "距离首条消息"
+            logger.info(
+                f"[ChatBuffer] UMO={umo} 触发分析: {reason_text} "
+                f"{elapsed} 分钟 >= 阈值 {self.time_threshold_min} 分钟"
+            )
+            return AnalysisTrigger(
+                triggered=True,
+                reason="time_threshold",
+                messages=msgs,
+            )
 
         return AnalysisTrigger()
 
@@ -149,7 +151,12 @@ class ChatBufferManager:
     # ------------------------------------------------------------------
 
     async def clear_buffer(self, umo: str) -> None:
-        """清空指定 UMO 的缓冲区。"""
+        """清空指定 UMO 的缓冲区。
+
+        注意：_last_analysis 必须保留以确保冷却期生效；
+        _last_active 会在下次 add_message 时刷新；
+        长期不活跃的 UMO 由 TTL 清理任务统一移除。
+        """
         lock = self._locks.get(umo)
         if lock:
             async with lock:
