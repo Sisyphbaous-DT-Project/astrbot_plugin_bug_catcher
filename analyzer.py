@@ -254,8 +254,7 @@ primary_message_index 规则（重要）：
                 severity = _one_line_text(bug.get("severity", "?"), "?")
                 bug_id = _one_line_text(bug.get("id", "?"), "?")
                 lines.append(
-                    f"* {i}. [{severity}] {summary} "
-                    f"{status_str} (ID: {bug_id})"
+                    f"* {i}. [{severity}] {summary} {status_str} (ID: {bug_id})"
                 )
             lines.append("")
 
