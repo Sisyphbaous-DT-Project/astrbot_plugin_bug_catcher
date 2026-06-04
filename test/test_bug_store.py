@@ -71,7 +71,9 @@ class TestBugStore:
         assert len(store._bugs) == 0
 
     @pytest.mark.asyncio
-    async def test_load_existing_data(self, store, sample_analysis, sample_messages, temp_data_dir):
+    async def test_load_existing_data(
+        self, store, sample_analysis, sample_messages, temp_data_dir
+    ):
         """应正确加载已有数据。"""
         await store.add_bugs_from_analysis(
             umo="test:GROUP_MESSAGE:1",
@@ -117,7 +119,9 @@ class TestBugStore:
     # ------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_add_bugs_from_analysis(self, store, sample_analysis, sample_messages):
+    async def test_add_bugs_from_analysis(
+        self, store, sample_analysis, sample_messages
+    ):
         """应正确添加并保存 bug 记录。"""
         records = await store.add_bugs_from_analysis(
             umo="test:GROUP_MESSAGE:1",
@@ -153,7 +157,9 @@ class TestBugStore:
         assert total == 50  # 25 * 2 bugs each
 
     @pytest.mark.asyncio
-    async def test_get_bugs_filter_by_severity(self, store, sample_analysis, sample_messages):
+    async def test_get_bugs_filter_by_severity(
+        self, store, sample_analysis, sample_messages
+    ):
         """按严重程度筛选应正确工作。"""
         await store.add_bugs_from_analysis(
             umo="test",
@@ -165,7 +171,9 @@ class TestBugStore:
         assert bugs[0].severity == "high"
 
     @pytest.mark.asyncio
-    async def test_get_bugs_filter_by_status(self, store, sample_analysis, sample_messages):
+    async def test_get_bugs_filter_by_status(
+        self, store, sample_analysis, sample_messages
+    ):
         """按状态筛选应正确工作。"""
         await store.add_bugs_from_analysis(
             umo="test",

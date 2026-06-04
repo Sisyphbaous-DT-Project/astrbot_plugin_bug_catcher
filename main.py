@@ -94,9 +94,7 @@ class BugCatcherPlugin(Star):
     # 分析引擎入口（Phase 3 实现）
     # ------------------------------------------------------------------
 
-    async def _analyze_and_store(
-        self, umo: str, messages: list
-    ) -> None:
+    async def _analyze_and_store(self, umo: str, messages: list) -> None:
         """调用 AI 分析并保存结果。"""
         logger.info(f"[BugCatcher] 开始分析 UMO={umo}，消息数: {len(messages)}")
 

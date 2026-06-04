@@ -161,22 +161,24 @@ class TestBugAnalyzer:
     async def test_call_llm_with_configured_provider(self, analyzer, mock_context):
         """配置了 provider_id 时应直接使用。"""
         analyzer.provider_id = "gpt4"
-        mock_context.llm_generate.return_value = MagicMock(completion_text='{"result": "none"}')
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text='{"result": "none"}'
+        )
         await analyzer._call_llm("test prompt", "test_umo")
         mock_context.llm_generate.assert_awaited_once()
         call_kwargs = mock_context.llm_generate.call_args.kwargs
         assert call_kwargs["chat_provider_id"] == "gpt4"
 
     @pytest.mark.asyncio
-    async def test_call_llm_fallback_to_default(
-        self, analyzer, mock_context
-    ):
+    async def test_call_llm_fallback_to_default(self, analyzer, mock_context):
         """未配置 provider_id 时应回退到默认 Provider。"""
         analyzer.provider_id = ""
         mock_provider = MagicMock()
         mock_provider.meta.return_value = MagicMock(id="default_gpt")
         mock_context.get_using_provider.return_value = mock_provider
-        mock_context.llm_generate.return_value = MagicMock(completion_text='{"result": "none"}')
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text='{"result": "none"}'
+        )
 
         await analyzer._call_llm("test prompt", "test_umo")
         mock_context.get_using_provider.assert_called_once_with("test_umo")
@@ -184,9 +186,7 @@ class TestBugAnalyzer:
         assert call_kwargs["chat_provider_id"] == "default_gpt"
 
     @pytest.mark.asyncio
-    async def test_call_llm_no_provider_raises(
-        self, analyzer, mock_context
-    ):
+    async def test_call_llm_no_provider_raises(self, analyzer, mock_context):
         """无 Provider 时应抛出异常。"""
         analyzer.provider_id = ""
         mock_context.get_using_provider.return_value = None
@@ -218,9 +218,7 @@ class TestBugAnalyzer:
         assert result.error == ""
 
     @pytest.mark.asyncio
-    async def test_analyze_llm_failure(
-        self, analyzer, mock_context, sample_messages
-    ):
+    async def test_analyze_llm_failure(self, analyzer, mock_context, sample_messages):
         """LLM 调用失败应返回 error。"""
         analyzer.provider_id = "test_provider"
         mock_context.llm_generate.side_effect = ConnectionError("网络超时")
@@ -239,6 +237,3 @@ class TestBugAnalyzer:
 
         result = await analyzer.analyze(sample_messages, "test_umo")
         assert result.error == "empty response"
-
-
-

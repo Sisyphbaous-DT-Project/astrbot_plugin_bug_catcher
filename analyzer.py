@@ -127,16 +127,14 @@ class BugAnalyzer:
         """构建 User Prompt。"""
         lines = [
             f"以下是近期 {len(messages)} 条群聊记录（按时间顺序），"
-            f"每条记录格式为 \"[索引] 时间 发送者: 内容\"：\n"
+            f'每条记录格式为 "[索引] 时间 发送者: 内容"：\n'
         ]
         for idx, msg in enumerate(messages):
-            time_str = time.strftime(
-                "%H:%M:%S", time.localtime(msg.timestamp)
-            )
-            lines.append(
-                f"[{idx}] {time_str} {msg.sender_name}: {msg.content}"
-            )
-        lines.append("\n请分析这些记录中是否包含对 AstrBot 或其插件的 bug 反馈，输出 JSON 结果。")
+            time_str = time.strftime("%H:%M:%S", time.localtime(msg.timestamp))
+            lines.append(f"[{idx}] {time_str} {msg.sender_name}: {msg.content}")
+        lines.append(
+            "\n请分析这些记录中是否包含对 AstrBot 或其插件的 bug 反馈，输出 JSON 结果。"
+        )
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -157,8 +155,7 @@ class BugAnalyzer:
             return prompt
 
         logger.warning(
-            f"[Analyzer] Prompt 过长（估算 {total_tok} tokens），"
-            f"开始截断早期消息"
+            f"[Analyzer] Prompt 过长（估算 {total_tok} tokens），开始截断早期消息"
         )
 
         # 分割为头部说明、消息行
@@ -167,9 +164,11 @@ class BugAnalyzer:
         msg_lines = [line for line in lines if line.startswith("[")]
 
         # 从最早的消息开始删除，直到 token 足够
-        while msg_lines and self._estimate_tokens(
-            "\n".join(header + msg_lines)
-        ) + system_tok > self._MAX_PROMPT_TOKENS:
+        while (
+            msg_lines
+            and self._estimate_tokens("\n".join(header + msg_lines)) + system_tok
+            > self._MAX_PROMPT_TOKENS
+        ):
             msg_lines.pop(0)
 
         truncated = "\n".join(header + msg_lines)
@@ -242,8 +241,8 @@ class BugAnalyzer:
         # 尝试匹配 markdown 代码块
         patterns = [
             r"```json\s*(.*?)\s*```",  # ```json ... ```
-            r"```\s*(.*?)\s*```",       # ``` ... ```
-            r"(\{[\s\S]*\})",           # 最外层 {...}
+            r"```\s*(.*?)\s*```",  # ``` ... ```
+            r"(\{[\s\S]*\})",  # 最外层 {...}
         ]
         for pat in patterns:
             match = re.search(pat, text, re.DOTALL)

@@ -156,9 +156,7 @@ class TestDashboardAPI:
     @pytest.mark.asyncio
     async def test_update_status_success(self, api, mock_bug_store):
         """更新状态成功。"""
-        with patch(
-            "astrbot_plugin_bug_catcher.dashboard_api.request"
-        ) as mock_req:
+        with patch("astrbot_plugin_bug_catcher.dashboard_api.request") as mock_req:
             mock_req.get_json = AsyncMock(return_value={"status": "resolved"})
             resp = await api.update_status(id="bug-123")
 
@@ -170,9 +168,7 @@ class TestDashboardAPI:
         """更新无效状态应失败。"""
         mock_bug_store.update_bug_status.return_value = False
 
-        with patch(
-            "astrbot_plugin_bug_catcher.dashboard_api.request"
-        ) as mock_req:
+        with patch("astrbot_plugin_bug_catcher.dashboard_api.request") as mock_req:
             mock_req.get_json = AsyncMock(return_value={"status": "resolved"})
             resp = await api.update_status(id="bug-123")
 
@@ -182,9 +178,7 @@ class TestDashboardAPI:
     @pytest.mark.asyncio
     async def test_update_status_missing_body(self, api):
         """缺少请求体应返回错误。"""
-        with patch(
-            "astrbot_plugin_bug_catcher.dashboard_api.request"
-        ) as mock_req:
+        with patch("astrbot_plugin_bug_catcher.dashboard_api.request") as mock_req:
             mock_req.get_json = AsyncMock(return_value={})
             resp = await api.update_status(id="bug-123")
 

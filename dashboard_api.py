@@ -134,9 +134,7 @@ class DashboardAPI:
             return self._error("缺少 status 字段")
 
         try:
-            success = await self.bug_store.update_bug_status(
-                bug_id, status, note
-            )
+            success = await self.bug_store.update_bug_status(bug_id, status, note)
         except Exception as e:
             logger.error(f"[DashboardAPI] 更新状态失败: {e}")
             return self._error(str(e))
@@ -159,6 +157,7 @@ class DashboardAPI:
 # ------------------------------------------------------------------
 # 参数解析辅助
 # ------------------------------------------------------------------
+
 
 def _int_param(args, key: str, default: int, min_val: int = 1) -> int:
     """从查询参数解析整数（自动 clamp 到 min_val）。"""

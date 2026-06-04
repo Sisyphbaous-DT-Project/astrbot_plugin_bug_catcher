@@ -74,9 +74,7 @@ class ChatBufferManager:
             now = time.time()
             self._last_active[umo] = now
 
-            buf = self._buffers.setdefault(
-                umo, deque(maxlen=self.max_history)
-            )
+            buf = self._buffers.setdefault(umo, deque(maxlen=self.max_history))
             buf.append(
                 MessageRecord(
                     timestamp=now,

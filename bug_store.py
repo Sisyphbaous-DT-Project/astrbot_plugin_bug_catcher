@@ -61,9 +61,7 @@ class BugStore:
 
     def __init__(self, data_dir: str | None = None):
         if data_dir is None:
-            data_dir = os.path.join(
-                get_astrbot_data_path(), "plugin_bug_catcher"
-            )
+            data_dir = os.path.join(get_astrbot_data_path(), "plugin_bug_catcher")
         os.makedirs(data_dir, exist_ok=True)
         self._file_path = os.path.join(data_dir, self._FILE_NAME)
         self._lock = asyncio.Lock()
@@ -242,9 +240,7 @@ class BugStore:
         async with self._lock:
             return self._bugs.get(bug_id)
 
-    async def update_bug_status(
-        self, bug_id: str, status: str, note: str = ""
-    ) -> bool:
+    async def update_bug_status(self, bug_id: str, status: str, note: str = "") -> bool:
         """更新 bug 状态。
 
         Returns:

@@ -39,9 +39,7 @@ class TestBugCatcherPluginIntegration:
         with patch.object(
             plugin.bug_store, "load", new_callable=AsyncMock
         ) as mock_load:
-            with patch.object(
-                plugin.buffer_mgr, "start_cleanup_task"
-            ) as mock_start:
+            with patch.object(plugin.buffer_mgr, "start_cleanup_task") as mock_start:
                 await plugin.initialize()
                 mock_load.assert_awaited_once()
                 mock_start.assert_called_once()
@@ -49,9 +47,7 @@ class TestBugCatcherPluginIntegration:
     @pytest.mark.asyncio
     async def test_terminate(self, plugin):
         """终止应停止清理任务。"""
-        with patch.object(
-            plugin.buffer_mgr, "stop_cleanup_task"
-        ) as mock_stop:
+        with patch.object(plugin.buffer_mgr, "stop_cleanup_task") as mock_stop:
             await plugin.terminate()
             mock_stop.assert_called_once()
 
@@ -80,9 +76,7 @@ class TestBugCatcherPluginIntegration:
     # ------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_on_group_message_ignores_non_whitelist(
-        self, plugin, mock_event
-    ):
+    async def test_on_group_message_ignores_non_whitelist(self, plugin, mock_event):
         """非白名单 UMO 应被忽略。"""
         plugin.config["global_mode"] = False
         plugin.config["umo_whitelist"] = ["other_umo"]
@@ -92,9 +86,7 @@ class TestBugCatcherPluginIntegration:
             mock_add.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_on_group_message_processes_and_triggers(
-        self, plugin, mock_event
-    ):
+    async def test_on_group_message_processes_and_triggers(self, plugin, mock_event):
         """消息应被缓存并触发分析。"""
         plugin.config["global_mode"] = True
         plugin.config["batch_size"] = 3
@@ -102,9 +94,7 @@ class TestBugCatcherPluginIntegration:
         # 模拟触发分析
         from astrbot_plugin_bug_catcher.chat_buffer import AnalysisTrigger
 
-        trigger = AnalysisTrigger(
-            triggered=True, reason="batch_size", messages=[]
-        )
+        trigger = AnalysisTrigger(triggered=True, reason="batch_size", messages=[])
 
         with patch.object(
             plugin.buffer_mgr, "add_message", new_callable=AsyncMock
@@ -123,9 +113,7 @@ class TestBugCatcherPluginIntegration:
     # ------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_analyze_and_store_confirmed(
-        self, plugin, mock_context
-    ):
+    async def test_analyze_and_store_confirmed(self, plugin, mock_context):
         """confirmed 结果应保存 bug 记录。"""
         from astrbot_plugin_bug_catcher.analyzer import AnalysisResult, BugItem
         from astrbot_plugin_bug_catcher.chat_buffer import MessageRecord
