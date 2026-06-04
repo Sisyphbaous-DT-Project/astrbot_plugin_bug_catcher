@@ -72,7 +72,7 @@ class BugAnalyzer:
             "severity": "low" | "medium" | "high" | "critical",
             "summary": "用一句话简要描述这个 bug",
             "analysis": "详细分析为什么判断这是 bug，基于哪些聊天记录得出此结论。如果是重复 bug，请说明首次发现时间和之前的记录 ID。",
-            "related_messages": [0, 1, 2],
+            "related_messages": [0],
             "is_duplicate": false,
             "duplicate_of_id": ""
         }
@@ -167,7 +167,7 @@ class BugAnalyzer:
             content = self._sanitize_content(msg.content)
             lines.append(f"[{idx}] {time_str} {msg.sender_name}: {content}")
 
-        # 已有 bug 列表（用于去重），动态限制数量避免超出 token
+        # 已有 bug 列表（用于去重），动态限制数量避免参考列表过长干扰分析
         if existing_bugs:
             max_existing = max(3, 15 - len(messages) // 20)
             existing_slice = existing_bugs[:max_existing]
@@ -220,8 +220,6 @@ class BugAnalyzer:
             return f"平台={parts[0]}, 群/会话 ID={parts[2]}"
         return umo
 
-    # ------------------------------------------------------------------
-    # Token 截断
     # ------------------------------------------------------------------
     # LLM 调用
     # ------------------------------------------------------------------
