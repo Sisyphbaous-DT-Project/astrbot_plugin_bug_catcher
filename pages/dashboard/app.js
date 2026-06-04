@@ -388,7 +388,11 @@ function formatTime(val, isTimestamp) {
 // 使用 try-catch 包裹，不可用时静默降级
 function safeConfirm(msg) {
   try {
-    if (typeof confirm === 'function') return confirm(msg);
+    if (typeof confirm === 'function') {
+      const result = confirm(msg);
+      // sandbox 忽略 confirm 时返回 undefined（不是 false）
+      return result !== undefined ? result : true;
+    }
   } catch (_) {}
   return true;
 }
