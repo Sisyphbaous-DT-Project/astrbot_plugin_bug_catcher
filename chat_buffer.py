@@ -215,15 +215,15 @@ class ChatBufferManager:
 
     async def _cleanup_loop(self) -> None:
         """每 30 分钟清理一次长期未活跃的缓冲区。"""
-        try:
-            while not self._shutdown:
+        while not self._shutdown:
+            try:
                 await asyncio.sleep(1800)  # 30 分钟
                 await self._do_cleanup()
-        except asyncio.CancelledError:
-            logger.debug("[ChatBuffer] 清理任务被取消")
-            raise
-        except Exception as e:
-            logger.error(f"[ChatBuffer] 清理任务异常: {e}")
+            except asyncio.CancelledError:
+                logger.debug("[ChatBuffer] 清理任务被取消")
+                raise
+            except Exception as e:
+                logger.error(f"[ChatBuffer] 清理任务异常: {e}")
 
     async def _do_cleanup(self) -> None:
         """执行清理。"""
