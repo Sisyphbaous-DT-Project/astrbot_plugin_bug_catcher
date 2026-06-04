@@ -17,6 +17,8 @@ const state = {
 
 // Bridge SDK（AstrBot 注入的全局对象）
 // app.js 在 Bridge SDK 之前加载，需要等待其就绪
+let bridge;
+
 async function getBridge() {
   return new Promise((resolve, reject) => {
     const maxWait = 5000; // 最多等 5 秒
@@ -39,7 +41,7 @@ async function getBridge() {
 // 等待 Bridge SDK 就绪
 (async function init() {
   try {
-    const bridge = await getBridge();
+    bridge = await getBridge();
     await bridge.ready();
     console.log('[BugCatcher] Bridge SDK 就绪');
     bindEvents();
