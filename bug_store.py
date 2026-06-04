@@ -123,6 +123,9 @@ class BugStore:
                 "total_suspected": 0,
                 "total_analyzed": 0,
             }
+        # 确保旧版本 stats 包含所有必需字段
+        for key in ("total_confirmed", "total_suspected", "total_analyzed"):
+            self._stats.setdefault(key, 0)
         logger.info(f"[BugStore] 已加载 {len(self._bugs)} 条记录")
 
     async def _save(self) -> None:
