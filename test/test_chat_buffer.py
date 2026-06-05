@@ -315,3 +315,30 @@ class TestChatBufferManager:
         await mgr.add_message("active_umo", "u1", "用户", "msg")
         await mgr._do_cleanup()
         assert mgr.get_buffer_size("active_umo") == 1
+
+    @pytest.mark.asyncio
+    async def test_stop_cleanup_task_awaits_cancellation(self, mgr):
+        """停止清理任务应等待取消完成并清空 task 引用。"""
+        mgr.start_cleanup_task()
+        task = mgr._cleanup_task
+        assert task is not None
+
+        await mgr.stop_cleanup_task()
+
+        assert task.done()
+        assert mgr._cleanup_task is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_task_can_restart_after_stop(self, mgr):
+        """停止清理任务后应允许重新启动。"""
+        mgr.start_cleanup_task()
+        first_task = mgr._cleanup_task
+        await mgr.stop_cleanup_task()
+
+        mgr.start_cleanup_task()
+        second_task = mgr._cleanup_task
+        try:
+            assert second_task is not None
+            assert second_task is not first_task
+        finally:
+            await mgr.stop_cleanup_task()

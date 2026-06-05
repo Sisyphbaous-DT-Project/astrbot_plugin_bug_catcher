@@ -146,7 +146,7 @@ ruff format --check .
 # Ruff lint
 ruff check .
 
-# 运行全部测试（124 项）
+# 运行全部测试（130 项）
 pytest -q
 
 # 检查 Dashboard 前端 JS 语法

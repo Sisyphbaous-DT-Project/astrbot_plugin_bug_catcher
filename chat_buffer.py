@@ -231,7 +231,7 @@ class ChatBufferManager:
 
     def start_cleanup_task(self) -> None:
         """启动定期清理长期未活跃缓冲区的后台任务。"""
-        if self._cleanup_task is not None:
+        if self._cleanup_task is not None and not self._cleanup_task.done():
             return
         self._shutdown = False
         self._cleanup_task = asyncio.create_task(
@@ -240,12 +240,14 @@ class ChatBufferManager:
         )
         logger.info("[ChatBuffer] TTL 清理任务已启动")
 
-    def stop_cleanup_task(self) -> None:
+    async def stop_cleanup_task(self) -> None:
         """停止清理任务。"""
         self._shutdown = True
         if self._cleanup_task and not self._cleanup_task.done():
             self._cleanup_task.cancel()
+            await asyncio.gather(self._cleanup_task, return_exceptions=True)
             logger.info("[ChatBuffer] TTL 清理任务已停止")
+        self._cleanup_task = None
 
     async def _cleanup_loop(self) -> None:
         """每 30 分钟清理一次长期未活跃的缓冲区。"""

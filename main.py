@@ -30,7 +30,7 @@ class BugCatcherPlugin(Star):
         self.bug_store = BugStore()
         self.diagnostics = DiagnosticsStore(self.config)
         self.dashboard_api = DashboardAPI(self.bug_store, self.diagnostics)
-        self._active = True
+        self._active = False
         self._analysis_tasks: set[asyncio.Task] = set()
         self._diagnostic_tasks: set[asyncio.Task] = set()
         self._scan_task: asyncio.Task | None = None
@@ -39,17 +39,17 @@ class BugCatcherPlugin(Star):
 
     async def initialize(self):
         """插件激活后调用，完成异步初始化。"""
-        self._active = True
         await self.diagnostics.load()
         await self.bug_store.load()
         self.buffer_mgr.start_cleanup_task()
+        self._active = True
         self._start_scan_task()
         logger.info("[BugCatcher] 插件已激活，消息缓存系统已启动")
 
     async def terminate(self):
         """插件禁用时调用，释放资源。"""
         self._active = False
-        self.buffer_mgr.stop_cleanup_task()
+        await self.buffer_mgr.stop_cleanup_task()
         await self._stop_scan_task()
         await self._cancel_analysis_tasks()
         await self._drain_diagnostic_tasks()

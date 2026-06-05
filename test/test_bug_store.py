@@ -395,6 +395,71 @@ class TestBugStore:
         assert "today_count" in stats
 
     @pytest.mark.asyncio
+    async def test_add_rolls_back_memory_when_save_fails(
+        self, store, sample_analysis, sample_messages
+    ):
+        """新增记录保存失败时应回滚内存记录与统计。"""
+        from unittest.mock import AsyncMock, patch
+
+        with patch.object(store, "_save", new_callable=AsyncMock) as mock_save:
+            mock_save.side_effect = OSError("disk full")
+            with pytest.raises(OSError):
+                await store.add_bugs_from_analysis(
+                    umo="test",
+                    analysis_result=sample_analysis,
+                    raw_messages=sample_messages,
+                )
+
+        assert store._bugs == {}
+        assert store._stats == {
+            "total_confirmed": 0,
+            "total_suspected": 0,
+            "total_analyzed": 0,
+        }
+
+    @pytest.mark.asyncio
+    async def test_duplicate_merge_rolls_back_when_save_fails(
+        self, store, sample_analysis, sample_messages
+    ):
+        """重复合并保存失败时应回滚已有记录的 report_history。"""
+        from unittest.mock import AsyncMock, patch
+
+        records = await store.add_bugs_from_analysis(
+            umo="test",
+            analysis_result=sample_analysis,
+            raw_messages=sample_messages,
+        )
+        existing_id = records[0].id
+        original_history = list(records[0].report_history)
+        original_stats = dict(store._stats)
+
+        duplicate_analysis = AnalysisResult(
+            result="confirmed",
+            bugs=[
+                BugItem(
+                    severity="high",
+                    summary="重复报告",
+                    analysis="same",
+                    related_messages=[0],
+                    is_duplicate=True,
+                    duplicate_of_id=existing_id,
+                )
+            ],
+        )
+
+        with patch.object(store, "_save", new_callable=AsyncMock) as mock_save:
+            mock_save.side_effect = OSError("disk full")
+            with pytest.raises(OSError):
+                await store.add_bugs_from_analysis(
+                    umo="test",
+                    analysis_result=duplicate_analysis,
+                    raw_messages=sample_messages,
+                )
+
+        assert store._bugs[existing_id].report_history == original_history
+        assert store._stats == original_stats
+
+    @pytest.mark.asyncio
     async def test_get_stats_today_count(self, store):
         """today_count 应按全量记录统计，不依赖分页。"""
         from astrbot_plugin_bug_catcher.bug_store import BugRecord

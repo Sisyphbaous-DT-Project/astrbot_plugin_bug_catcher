@@ -46,11 +46,48 @@ class TestBugCatcherPluginIntegration:
                 mock_start.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_inactive_before_initialize(self, plugin, mock_event):
+        """initialize 完成前不应处理事件。"""
+        plugin.config["global_mode"] = True
+
+        with patch.object(
+            plugin.buffer_mgr, "add_message", new_callable=AsyncMock
+        ) as mock_add:
+            await plugin.on_group_message(mock_event)
+
+        mock_add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_initialize_sets_active_after_loads(self, plugin):
+        """数据加载完成后才进入 active 状态。"""
+        states = []
+
+        async def load_diagnostics():
+            states.append(("diagnostics", plugin._active))
+
+        async def load_bugs():
+            states.append(("bugs", plugin._active))
+
+        def start_scan():
+            states.append(("scan", plugin._active))
+
+        with patch.object(plugin.diagnostics, "load", side_effect=load_diagnostics):
+            with patch.object(plugin.bug_store, "load", side_effect=load_bugs):
+                with patch.object(plugin.buffer_mgr, "start_cleanup_task"):
+                    with patch.object(plugin, "_start_scan_task", side_effect=start_scan):
+                        await plugin.initialize()
+
+        assert states == [("diagnostics", False), ("bugs", False), ("scan", True)]
+        assert plugin._active is True
+
+    @pytest.mark.asyncio
     async def test_terminate(self, plugin):
         """终止应停止清理任务。"""
-        with patch.object(plugin.buffer_mgr, "stop_cleanup_task") as mock_stop:
+        with patch.object(
+            plugin.buffer_mgr, "stop_cleanup_task", new_callable=AsyncMock
+        ) as mock_stop:
             await plugin.terminate()
-            mock_stop.assert_called_once()
+            mock_stop.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_terminate_drains_diagnostic_tasks(self, plugin):
@@ -64,7 +101,9 @@ class TestBugCatcherPluginIntegration:
 
         task = asyncio.create_task(wait_briefly())
         plugin._diagnostic_tasks.add(task)
-        with patch.object(plugin.buffer_mgr, "stop_cleanup_task"):
+        with patch.object(
+            plugin.buffer_mgr, "stop_cleanup_task", new_callable=AsyncMock
+        ):
             await plugin.terminate()
 
         assert finished is True
@@ -97,6 +136,7 @@ class TestBugCatcherPluginIntegration:
     @pytest.mark.asyncio
     async def test_on_group_message_ignores_non_whitelist(self, plugin, mock_event):
         """非白名单 UMO 应被忽略。"""
+        plugin._active = True
         plugin.config["global_mode"] = False
         plugin.config["umo_whitelist"] = ["other_umo"]
 
@@ -107,6 +147,7 @@ class TestBugCatcherPluginIntegration:
     @pytest.mark.asyncio
     async def test_on_group_message_processes_and_triggers(self, plugin, mock_event):
         """消息应被缓存并触发分析。"""
+        plugin._active = True
         plugin.config["global_mode"] = True
         plugin.config["batch_size"] = 3
 
@@ -131,6 +172,7 @@ class TestBugCatcherPluginIntegration:
     @pytest.mark.asyncio
     async def test_on_group_message_handles_none_fields(self, plugin, mock_event):
         """事件字段为 None 时应转为空字符串/未知，不应在日志切片或入队时崩溃。"""
+        plugin._active = True
         plugin.config["global_mode"] = True
         mock_event.get_sender_id.return_value = None
         mock_event.get_sender_name.return_value = None
@@ -160,6 +202,7 @@ class TestBugCatcherPluginIntegration:
         from astrbot_plugin_bug_catcher.analyzer import AnalysisResult, BugItem
         from astrbot_plugin_bug_catcher.chat_buffer import MessageRecord
 
+        plugin._active = True
         result = AnalysisResult(
             result="confirmed",
             bugs=[
