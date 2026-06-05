@@ -74,7 +74,9 @@ class TestBugCatcherPluginIntegration:
         with patch.object(plugin.diagnostics, "load", side_effect=load_diagnostics):
             with patch.object(plugin.bug_store, "load", side_effect=load_bugs):
                 with patch.object(plugin.buffer_mgr, "start_cleanup_task"):
-                    with patch.object(plugin, "_start_scan_task", side_effect=start_scan):
+                    with patch.object(
+                        plugin, "_start_scan_task", side_effect=start_scan
+                    ):
                         await plugin.initialize()
 
         assert states == [("diagnostics", False), ("bugs", False), ("scan", True)]
