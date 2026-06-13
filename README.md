@@ -174,7 +174,7 @@ pytest test/ --cov=astrbot_plugin_bug_catcher --cov-report=term-missing
 
 ## License 许可证
 
-MIT License (c) 2026 C2H2SNO6
+MIT License (c) 2026 
 
 ### 使用声明
 
